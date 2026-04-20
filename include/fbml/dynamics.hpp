@@ -32,9 +32,6 @@ public:
   explicit Dynamics(const RobotCore & core);
   virtual ~Dynamics() = default;
 
-  Eigen::MatrixXd computeGeneralizedJacobian(
-    const Eigen::VectorXd & q, const std::string & frame_name);
-
   Eigen::MatrixXd computeMassMatrix(const Eigen::VectorXd & q);
 
   // ?: Should use struct (PartitionedMassMatrix{fbml::Matrix6d base; Eigen::MatrixXd coupling;}) as output?
