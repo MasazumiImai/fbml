@@ -67,4 +67,60 @@ void RobotCore::setActuatorParameters(
   model_.friction.tail(num_actuated_joints) = damping_vector;
 }
 
+std::vector<std::string> RobotCore::getJointNamesBetweenFrames(
+  const std::string & start_frame_name, const std::string & end_frame_name) const
+{
+  if (!model_.existFrame(start_frame_name)) {
+    throw std::invalid_argument("Frame '" + start_frame_name + "' does not exist.");
+  }
+  if (!model_.existFrame(end_frame_name)) {
+    throw std::invalid_argument("Frame '" + end_frame_name + "' does not exist.");
+  }
+
+  pinocchio::FrameIndex start_frame_id = model_.getFrameId(start_frame_name);
+  pinocchio::FrameIndex end_frame_id = model_.getFrameId(end_frame_name);
+
+  pinocchio::JointIndex start_joint = model_.frames[start_frame_id].parentJoint;
+  pinocchio::JointIndex end_joint = model_.frames[end_frame_id].parentJoint;
+
+  auto getPathToRoot = [this](pinocchio::JointIndex j) {
+    std::vector<pinocchio::JointIndex> path;
+    while (j > 0) {
+      path.push_back(j);
+      j = model_.parents[j];
+    }
+    return path;
+  };
+
+  std::vector<pinocchio::JointIndex> path_start = getPathToRoot(start_joint);
+  std::vector<pinocchio::JointIndex> path_end = getPathToRoot(end_joint);
+
+  int idx_start = path_start.size() - 1;
+  int idx_end = path_end.size() - 1;
+
+  // Find common ancestor
+  while (idx_start >= 0 && idx_end >= 0 && path_start[idx_start] == path_end[idx_end]) {
+    idx_start--;
+    idx_end--;
+  }
+
+  std::vector<pinocchio::JointIndex> final_path_ids;
+
+  // Start to common ancestor
+  for (int i = 0; i <= idx_start; ++i) {
+    final_path_ids.push_back(path_start[i]);
+  }
+  // Common ancestor to end
+  for (int i = idx_end; i >= 0; --i) {
+    final_path_ids.push_back(path_end[i]);
+  }
+
+  std::vector<std::string> joint_names;
+  for (const auto & j_id : final_path_ids) {
+    joint_names.push_back(model_.names[j_id]);
+  }
+
+  return joint_names;
+}
+
 }  // namespace fbml
