@@ -4,9 +4,8 @@
 
 ## Requirements
 
-* [ROS 2](https://docs.ros.org/en/humble/index.html) (Humble)
-* [Pinocchio](https://github.com/stack-of-tasks/pinocchio)
-* [Eigen3](https://eigen.tuxfamily.org/)
+- [ROS 2](https://docs.ros.org/en/humble/index.html) (Humble)
+- [Pinocchio](https://github.com/stack-of-tasks/pinocchio)
 
 ## Installation
 
