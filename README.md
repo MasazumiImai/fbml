@@ -11,11 +11,12 @@
 
 ```bash
 # Clone repository
-mkdir -p ~/fbml/src
-cd ~/fbml/src
+mkdir -p ~/fbml_ws/src
+cd ~/fbml_ws/src
 git clone https://github.com/MasazumiImai/fbml.git
 
 # Build
+cd ~/fbml_ws
 colcon build --packages-select fbml --symlink-install
 source install/setup.bash
 ```
