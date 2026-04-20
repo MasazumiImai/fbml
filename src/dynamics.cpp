@@ -80,7 +80,7 @@ Eigen::MatrixXd Dynamics::computeGeneralizedJacobian(
   const int njoints = model_.nv - 6;
 
   fbml::Matrix6d M_b = data_.M.block<6, 6>(0, 0);
-  Eigen::MatrixXd M_bm = data_.M.block(0, 6, njoints, 6).transpose();
+  Eigen::MatrixXd M_bm = data_.M.block(0, 6, 6, njoints);
 
   fbml::Matrix6d J_b = J_full.block<6, 6>(0, 0);
   Eigen::MatrixXd J_m = J_full.block(0, 6, 6, njoints);
