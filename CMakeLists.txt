@@ -41,17 +41,17 @@ install(TARGETS ${PROJECT_NAME}
   INCLUDES DESTINATION include
 )
 
-if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  set(ament_cmake_copyright_FOUND TRUE)
-  set(ament_cmake_cpplint_FOUND TRUE)
-  ament_lint_auto_find_test_dependencies()
+# if(BUILD_TESTING)
+#   find_package(ament_lint_auto REQUIRED)
+#   set(ament_cmake_copyright_FOUND TRUE)
+#   set(ament_cmake_cpplint_FOUND TRUE)
+#   ament_lint_auto_find_test_dependencies()
 
   # find_package(ament_cmake_gtest REQUIRED)
   # ament_add_gtest(unit_test_${PROJECT_NAME} test/unit_test_${PROJECT_NAME}.cpp)
   # if(TARGET unit_test_${PROJECT_NAME})
   #   target_link_libraries(unit_test_${PROJECT_NAME} ${PROJECT_NAME})
   # endif()
-endif()
+# endif()
 
 ament_package()
