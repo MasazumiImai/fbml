@@ -17,6 +17,7 @@
 
 #include <Eigen/Dense>
 #include <string>
+#include <vector>
 
 #include <pinocchio/multibody/model.hpp>
 
@@ -39,6 +40,9 @@ public:
 
   void setActuatorParameters(
     const Eigen::VectorXd & armature_vector, const Eigen::VectorXd & damping_vector);
+
+  std::vector<std::string> getJointNamesBetweenFrames(
+    const std::string & start_frame_name, const std::string & end_frame_name) const;
 
 private:
   pinocchio::Model model_;
