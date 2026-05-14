@@ -31,7 +31,7 @@ class FBML_PUBLIC RobotCore
 public:
   explicit RobotCore(
     const std::string & urdf_path,
-    const Eigen::Vector3d & gravity = Eigen::Vector3d(0.0, 0.0, -9.81));
+    const Eigen::Vector3d & gravity = Eigen::Vector3d(0.0, 0.0, 0.0));
   virtual ~RobotCore() = default;
 
   const pinocchio::Model & getModel() const { return model_; }
