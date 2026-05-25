@@ -20,7 +20,6 @@
 #include <vector>
 
 #include <pinocchio/multibody/data.hpp>
-#include <pinocchio/spatial/se3.hpp>
 
 #include "fbml/core.hpp"
 #include "fbml/types.hpp"
@@ -49,23 +48,14 @@ public:
     const Eigen::VectorXd & q, const std::string & frame_name,
     pinocchio::ReferenceFrame reference_frame = pinocchio::LOCAL);
 
-  pinocchio::SE3 solveFK(
+  Eigen::Isometry3d solveFK(
     const Eigen::VectorXd & q, const std::string & target_frame,
     const std::string & reference_frame = "world");
 
   bool solveNumericalIK(
-    Eigen::VectorXd & q, const std::string & frame_name, const pinocchio::SE3 & desired_pose,
-    const std::vector<std::string> & joint_names, const std::string & reference_frame = "world",
-    const IKSettings & settings = IKSettings());
-
-  bool solveNumericalIK(
     Eigen::VectorXd & q, const std::string & frame_name, const Eigen::Isometry3d & desired_pose,
     const std::vector<std::string> & joint_names, const std::string & reference_frame = "world",
-    const IKSettings & settings = IKSettings())
-  {
-    pinocchio::SE3 pose_se3(desired_pose.matrix());
-    return solveNumericalIK(q, frame_name, pose_se3, joint_names, reference_frame, settings);
-  }
+    const IKSettings & settings = IKSettings());
 
   bool solvePositionIK(
     Eigen::VectorXd & q, const std::string & frame_name, const Eigen::Vector3d & desired_position,
@@ -74,14 +64,15 @@ public:
   {
     settings.task_weights << 1.0, 1.0, 1.0, 0.0, 0.0, 0.0;  // Only for position
 
-    pinocchio::SE3 desired_pose(Eigen::Matrix3d::Identity(), desired_position);
+    Eigen::Isometry3d desired_pose = Eigen::Isometry3d::Identity();
+    desired_pose.translation() = desired_position;
 
     return solveNumericalIK(q, frame_name, desired_pose, joint_names, reference_frame, settings);
   }
 
   Eigen::VectorXd solveIVK(
     const Eigen::VectorXd & q, const std::string & frame_name,
-    const Eigen::Matrix<double, 6, 1> & desired_twist_in_local,
+    const Eigen::Vector<double, 6> & desired_twist_in_local,
     const std::vector<std::string> & joint_names, double damping_factor = 1e-2);
 
 private:

@@ -20,6 +20,7 @@
 #include <pinocchio/algorithm/jacobian.hpp>
 #include <pinocchio/algorithm/joint-configuration.hpp>
 #include <pinocchio/algorithm/kinematics.hpp>
+#include <pinocchio/spatial/se3.hpp>
 
 namespace fbml
 {
@@ -50,7 +51,7 @@ Eigen::MatrixXd Kinematics::computeJacobian(
   return J;
 }
 
-pinocchio::SE3 Kinematics::solveFK(
+Eigen::Isometry3d Kinematics::solveFK(
   const Eigen::VectorXd & q, const std::string & target_frame, const std::string & reference_frame)
 {
   if (!model_.existFrame(target_frame)) {
@@ -61,26 +62,33 @@ pinocchio::SE3 Kinematics::solveFK(
   pinocchio::updateFramePlacements(model_, data_);
 
   pinocchio::FrameIndex target_id = model_.getFrameId(target_frame);
+  pinocchio::SE3 pose_se3;
 
   if (reference_frame == "world") {
-    pinocchio::SE3 pose_in_world = data_.oMf[target_id];
-    return pose_in_world;
-  } else if (!model_.existFrame(reference_frame)) {
-    throw std::invalid_argument("Frame '" + reference_frame + "' does not exist in the model.");
+    pose_se3 = data_.oMf[target_id];
+  } else {
+    if (!model_.existFrame(reference_frame)) {
+      throw std::invalid_argument("Frame '" + reference_frame + "' does not exist in the model.");
+    }
+    pinocchio::FrameIndex ref_id = model_.getFrameId(reference_frame);
+    pose_se3 = data_.oMf[ref_id].actInv(data_.oMf[target_id]);
   }
 
-  pinocchio::FrameIndex ref_id = model_.getFrameId(reference_frame);
+  Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
+  pose.linear() = pose_se3.rotation();
+  pose.translation() = pose_se3.translation();
 
-  pinocchio::SE3 pose_in_ref = data_.oMf[ref_id].actInv(data_.oMf[target_id]);
-  return pose_in_ref;
+  return pose;
 }
 
 bool Kinematics::solveNumericalIK(
-  Eigen::VectorXd & q, const std::string & frame_name, const pinocchio::SE3 & desired_pose,
+  Eigen::VectorXd & q, const std::string & frame_name, const Eigen::Isometry3d & desired_pose,
   const std::vector<std::string> & joint_names, const std::string & reference_frame,
   const IKSettings & settings)
 {
   // TODO: Add kinematic feasibility (joint limits) check (Stop if a joint seems like it’s about to exceed its limit)
+
+  pinocchio::SE3 des_pose_se3(desired_pose.rotation(), desired_pose.translation());
 
   if (!model_.existFrame(frame_name)) {
     throw std::invalid_argument("Frame '" + frame_name + "' does not exist.");
@@ -114,10 +122,10 @@ bool Kinematics::solveNumericalIK(
     pinocchio::computeJointJacobians(model_, data_, q);
     pinocchio::updateFramePlacements(model_, data_);
 
-    pinocchio::SE3 des_pose_in_world = desired_pose;
+    pinocchio::SE3 des_pose_in_world = des_pose_se3;
     if (use_ref) {
       // _oM_ref * _refM_des = _oM_des
-      des_pose_in_world = data_.oMf[ref_id] * desired_pose;
+      des_pose_in_world = data_.oMf[ref_id] * des_pose_se3;
     }
 
     pinocchio::SE3 T_cur = data_.oMf[frame_id];
@@ -169,7 +177,7 @@ bool Kinematics::solveNumericalIK(
 
 Eigen::VectorXd Kinematics::solveIVK(
   const Eigen::VectorXd & q, const std::string & frame_name,
-  const Eigen::Matrix<double, 6, 1> & desired_twist_in_local,
+  const Eigen::Vector<double, 6> & desired_twist_in_local,
   const std::vector<std::string> & joint_names, double damping_factor)
 {
   Eigen::MatrixXd J_full = computeJacobian(q, frame_name, pinocchio::LOCAL);
