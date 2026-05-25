@@ -167,4 +167,38 @@ bool Kinematics::solveNumericalIK(
   return false;
 }
 
+Eigen::VectorXd Kinematics::solveIVK(
+  const Eigen::VectorXd & q, const std::string & frame_name,
+  const Eigen::Matrix<double, 6, 1> & desired_twist_in_local,
+  const std::vector<std::string> & joint_names, double damping_factor)
+{
+  Eigen::MatrixXd J_full = computeJacobian(q, frame_name, pinocchio::LOCAL);
+
+  int sub_nv = 0;
+  for (const auto & name : joint_names) {
+    if (!model_.existJointName(name)) {
+      throw std::invalid_argument("Joint '" + name + "' does not exist.");
+    }
+    sub_nv += model_.joints[model_.getJointId(name)].nv();
+  }
+
+  Eigen::MatrixXd J_sub(6, sub_nv);
+  int col_offset = 0;
+  for (const auto & name : joint_names) {
+    pinocchio::JointIndex j_id = model_.getJointId(name);
+    int nv_i = model_.joints[j_id].nv();
+    int idx_v = model_.joints[j_id].idx_v();
+
+    J_sub.middleCols(col_offset, nv_i) = J_full.middleCols(idx_v, nv_i);
+    col_offset += nv_i;
+  }
+
+  Eigen::MatrixXd J_Jt = J_sub * J_sub.transpose();
+  Eigen::MatrixXd A = J_Jt + (damping_factor * damping_factor) * Eigen::MatrixXd::Identity(6, 6);
+
+  Eigen::VectorXd joint_vel = J_sub.transpose() * A.ldlt().solve(desired_twist_in_local);
+
+  return joint_vel;
+}
+
 }  // namespace fbml

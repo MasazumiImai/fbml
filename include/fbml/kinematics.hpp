@@ -79,6 +79,11 @@ public:
     return solveNumericalIK(q, frame_name, desired_pose, joint_names, reference_frame, settings);
   }
 
+  Eigen::VectorXd solveIVK(
+    const Eigen::VectorXd & q, const std::string & frame_name,
+    const Eigen::Matrix<double, 6, 1> & desired_twist_in_local,
+    const std::vector<std::string> & joint_names, double damping_factor = 1e-2);
+
 private:
   const pinocchio::Model & model_;
   pinocchio::Data data_;
