@@ -15,12 +15,27 @@
 #include "fbml/math_utils.hpp"
 
 #include <pinocchio/spatial/explog.hpp>
+#include <pinocchio/spatial/force.hpp>
+#include <pinocchio/spatial/motion.hpp>
 #include <pinocchio/spatial/se3.hpp>
 
 namespace fbml
 {
 namespace math
 {
+
+Eigen::Vector<double, 6> computePoseError(
+  const Eigen::Isometry3d & current_pose, const Eigen::Isometry3d & target_pose)
+{
+  pinocchio::SE3 cur_se3(current_pose.rotation(), current_pose.translation());
+  pinocchio::SE3 tgt_se3(target_pose.rotation(), target_pose.translation());
+
+  // Compute error (T_err = T_cur^-1 * T_tgt)
+  pinocchio::SE3 error_se3 = cur_se3.inverse() * tgt_se3;
+
+  // Logarithmic mapping (log6)
+  return pinocchio::log6(error_se3).toVector();
+}
 
 Eigen::Isometry3d integratePose(
   const Eigen::Isometry3d & current_pose, const Eigen::Vector<double, 6> & twist, double dt)
@@ -39,17 +54,27 @@ Eigen::Isometry3d integratePose(
   return result;
 }
 
-Eigen::Vector<double, 6> computePoseError(
-  const Eigen::Isometry3d & current_pose, const Eigen::Isometry3d & target_pose)
+Eigen::Vector<double, 6> transformTwist(
+  const Eigen::Vector<double, 6> & twist_in_A, const Eigen::Isometry3d & pose_A_to_B)
 {
-  pinocchio::SE3 cur_se3(current_pose.rotation(), current_pose.translation());
-  pinocchio::SE3 tgt_se3(target_pose.rotation(), target_pose.translation());
+  pinocchio::SE3 se3_A_to_B(pose_A_to_B.linear(), pose_A_to_B.translation());
+  pinocchio::Motion motion_in_A(twist_in_A.head<3>(), twist_in_A.tail<3>());
 
-  // Compute error (T_err = T_cur^-1 * T_tgt)
-  pinocchio::SE3 error_se3 = cur_se3.inverse() * tgt_se3;
+  // Inverse adjoint transformation
+  pinocchio::Motion motion_in_B = se3_A_to_B.actInv(motion_in_A);
 
-  // Logarithmic mapping (log6)
-  return pinocchio::log6(error_se3).toVector();
+  return motion_in_B.toVector();
+}
+
+Eigen::Vector<double, 6> transformWrench(
+  const Eigen::Vector<double, 6> & wrench_in_A, const Eigen::Isometry3d & pose_A_to_B)
+{
+  pinocchio::SE3 se3_A_to_B(pose_A_to_B.linear(), pose_A_to_B.translation());
+  pinocchio::Force force_in_A(wrench_in_A.head<3>(), wrench_in_A.tail<3>());
+
+  pinocchio::Force force_in_B = se3_A_to_B.actInv(force_in_A);
+
+  return force_in_B.toVector();
 }
 
 }  // namespace math
