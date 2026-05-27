@@ -14,6 +14,7 @@ add_library(${PROJECT_NAME} SHARED
   src/core.cpp
   src/kinematics.cpp
   src/dynamics.cpp
+  src/math_utils.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
