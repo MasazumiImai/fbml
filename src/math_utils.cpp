@@ -54,6 +54,22 @@ Eigen::Isometry3d integratePose(
   return result;
 }
 
+Eigen::Isometry3d transformPose(
+  const Eigen::Isometry3d & pose_in_A, const Eigen::Isometry3d & pose_A_to_B)
+{
+  pinocchio::SE3 se3_in_A(pose_in_A.rotation(), pose_in_A.translation());
+  pinocchio::SE3 se3_A_to_B(pose_A_to_B.rotation(), pose_A_to_B.translation());
+
+  // Inverse adjoint action on SE3 (p_B = (p_AtoB)^-1 * p_A)
+  pinocchio::SE3 se3_in_B = se3_A_to_B.actInv(se3_in_A);
+
+  Eigen::Isometry3d pose_in_B = Eigen::Isometry3d::Identity();
+  pose_in_B.linear() = se3_in_B.rotation();
+  pose_in_B.translation() = se3_in_B.translation();
+
+  return pose_in_B;
+}
+
 Eigen::Vector<double, 6> transformTwist(
   const Eigen::Vector<double, 6> & twist_in_A, const Eigen::Isometry3d & pose_A_to_B)
 {

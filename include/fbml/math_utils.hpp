@@ -48,6 +48,17 @@ Eigen::Isometry3d integratePose(
   const Eigen::Isometry3d & current_pose, const Eigen::Vector<double, 6> & twist, double dt);
 
 /**
+ * @brief Transform pose from frame A to B
+ *
+ * @param pose_in_A Pose in frame A
+ * @param pose_A_to_B Pose of frame B relative to frame A
+ * @return Eigen::Isometry3d Pose in frame B
+ */
+FBML_PUBLIC
+Eigen::Isometry3d transformPose(
+  const Eigen::Isometry3d & pose_in_A, const Eigen::Isometry3d & pose_A_to_B);
+
+/**
  * @brief Transform twist (spatial velocity) from frame A to B
  *
  * @param twist_in_A Twist in frame A [vx, vy, vz, wx, wy, wz]^T
