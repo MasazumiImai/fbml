@@ -29,11 +29,8 @@ RobotCore::RobotCore(const std::string & urdf_path, const Eigen::Vector3d & grav
 
     model_.gravity.linear() = gravity;
 
-    std::cout << "[fbml] Successfully loaded URDF." << std::endl;
-    std::cout << "[fbml] - Number of joints: " << model_.njoints << std::endl;
-    std::cout << "[fbml] - Degrees of freedom (nv): " << model_.nv << std::endl;
-    std::cout << "[fbml] - Configuration size (nq): " << model_.nq << std::endl;
-
+    std::cout << "[fbml] Successfully loaded URDF. " << model_.njoints - 2
+              << "-DoF (nv: " << model_.nv << ", nq: " << model_.nq << ")" << std::endl;
   } catch (const std::exception & e) {
     std::cerr << "[fbml] Failed to build Pinocchio model from URDF: " << urdf_path << std::endl;
     std::cerr << e.what() << std::endl;

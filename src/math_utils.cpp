@@ -55,42 +55,40 @@ Eigen::Isometry3d integratePose(
 }
 
 Eigen::Isometry3d transformPose(
-  const Eigen::Isometry3d & pose_in_A, const Eigen::Isometry3d & pose_A_to_B)
+  const Eigen::Isometry3d & pose_in_local, const Eigen::Isometry3d & pose_local_in_ref)
 {
-  pinocchio::SE3 se3_in_A(pose_in_A.rotation(), pose_in_A.translation());
-  pinocchio::SE3 se3_A_to_B(pose_A_to_B.rotation(), pose_A_to_B.translation());
+  pinocchio::SE3 se3_in_local(pose_in_local.rotation(), pose_in_local.translation());
+  pinocchio::SE3 se3_local_in_ref(pose_local_in_ref.rotation(), pose_local_in_ref.translation());
 
-  // Inverse adjoint action on SE3 (p_B = (p_AtoB)^-1 * p_A)
-  pinocchio::SE3 se3_in_B = se3_A_to_B.actInv(se3_in_A);
+  pinocchio::SE3 se3_in_ref = se3_local_in_ref.act(se3_in_local);
 
-  Eigen::Isometry3d pose_in_B = Eigen::Isometry3d::Identity();
-  pose_in_B.linear() = se3_in_B.rotation();
-  pose_in_B.translation() = se3_in_B.translation();
+  Eigen::Isometry3d pose_in_ref = Eigen::Isometry3d::Identity();
+  pose_in_ref.linear() = se3_in_ref.rotation();
+  pose_in_ref.translation() = se3_in_ref.translation();
 
-  return pose_in_B;
+  return pose_in_ref;
 }
 
 Eigen::Vector<double, 6> transformTwist(
-  const Eigen::Vector<double, 6> & twist_in_A, const Eigen::Isometry3d & pose_A_to_B)
+  const Eigen::Vector<double, 6> & twist_in_local, const Eigen::Isometry3d & pose_local_in_ref)
 {
-  pinocchio::SE3 se3_A_to_B(pose_A_to_B.linear(), pose_A_to_B.translation());
-  pinocchio::Motion motion_in_A(twist_in_A.head<3>(), twist_in_A.tail<3>());
+  pinocchio::SE3 se3_local_in_ref(pose_local_in_ref.linear(), pose_local_in_ref.translation());
+  pinocchio::Motion motion_in_local(twist_in_local.head<3>(), twist_in_local.tail<3>());
 
-  // Inverse adjoint transformation
-  pinocchio::Motion motion_in_B = se3_A_to_B.actInv(motion_in_A);
+  pinocchio::Motion motion_in_ref = se3_local_in_ref.act(motion_in_local);
 
-  return motion_in_B.toVector();
+  return motion_in_ref.toVector();
 }
 
 Eigen::Vector<double, 6> transformWrench(
-  const Eigen::Vector<double, 6> & wrench_in_A, const Eigen::Isometry3d & pose_A_to_B)
+  const Eigen::Vector<double, 6> & wrench_in_local, const Eigen::Isometry3d & pose_local_in_ref)
 {
-  pinocchio::SE3 se3_A_to_B(pose_A_to_B.linear(), pose_A_to_B.translation());
-  pinocchio::Force force_in_A(wrench_in_A.head<3>(), wrench_in_A.tail<3>());
+  pinocchio::SE3 se3_local_in_ref(pose_local_in_ref.linear(), pose_local_in_ref.translation());
+  pinocchio::Force force_in_local(wrench_in_local.head<3>(), wrench_in_local.tail<3>());
 
-  pinocchio::Force force_in_B = se3_A_to_B.actInv(force_in_A);
+  pinocchio::Force force_in_ref = se3_local_in_ref.act(force_in_local);
 
-  return force_in_B.toVector();
+  return force_in_ref.toVector();
 }
 
 }  // namespace math

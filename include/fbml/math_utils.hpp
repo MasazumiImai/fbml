@@ -48,37 +48,37 @@ Eigen::Isometry3d integratePose(
   const Eigen::Isometry3d & current_pose, const Eigen::Vector<double, 6> & twist, double dt);
 
 /**
- * @brief Transform pose from frame A to B
+ * @brief Transform pose from a local frame to a reference frame (Forward transformation).
  *
- * @param pose_in_A Pose in frame A
- * @param pose_A_to_B Pose of frame B relative to frame A
- * @return Eigen::Isometry3d Pose in frame B
+ * @param pose_in_local Pose expressed in the local frame.
+ * @param pose_local_in_ref Pose of the local frame viewed from the reference frame.
+ * @return Eigen::Isometry3d Pose expressed in the reference frame.
  */
 FBML_PUBLIC
 Eigen::Isometry3d transformPose(
-  const Eigen::Isometry3d & pose_in_A, const Eigen::Isometry3d & pose_A_to_B);
+  const Eigen::Isometry3d & pose_in_local, const Eigen::Isometry3d & pose_local_in_ref);
 
 /**
- * @brief Transform twist (spatial velocity) from frame A to B
+ * @brief Transform twist (spatial velocity) from a local frame to a reference frame (Forward transformation).
  *
- * @param twist_in_A Twist in frame A [vx, vy, vz, wx, wy, wz]^T
- * @param pose_A_to_B Pose of frame B from frame A
- * @return Eigen::Vector<double, 6> Twist in frame B
+ * @param twist_in_local Twist in the local frame [vx, vy, vz, wx, wy, wz]^T.
+ * @param pose_local_in_ref Pose of the local frame viewed from the reference frame.
+ * @return Eigen::Vector<double, 6> Twist expressed in the reference frame.
  */
 FBML_PUBLIC
 Eigen::Vector<double, 6> transformTwist(
-  const Eigen::Vector<double, 6> & twist_in_A, const Eigen::Isometry3d & pose_A_to_B);
+  const Eigen::Vector<double, 6> & twist_in_local, const Eigen::Isometry3d & pose_local_in_ref);
 
 /**
- * @brief Transform wrench (spatial force) from frame A to B
+ * @brief Transform wrench (spatial force) from a local frame to a reference frame (Forward transformation).
  *
- * @param wrench_in_A Wrench in A [fx, fy, fz, nx, ny, nz]^T
- * @param pose_A_to_B Pose of frame B from frame A
- * @return Eigen::Vector<double, 6> Wrench in B
+ * @param wrench_in_local Wrench in the local frame [fx, fy, fz, nx, ny, nz]^T.
+ * @param pose_local_in_ref Pose of the local frame viewed from the reference frame.
+ * @return Eigen::Vector<double, 6> Wrench expressed in the reference frame.
  */
 FBML_PUBLIC
 Eigen::Vector<double, 6> transformWrench(
-  const Eigen::Vector<double, 6> & wrench_in_A, const Eigen::Isometry3d & pose_A_to_B);
+  const Eigen::Vector<double, 6> & wrench_in_local, const Eigen::Isometry3d & pose_local_in_ref);
 
 }  // namespace math
 }  // namespace fbml
