@@ -23,7 +23,6 @@
 #include <pinocchio/multibody/data.hpp>
 
 #include "fbml/core.hpp"
-#include "fbml/types.hpp"
 #include "fbml/visibility_control.h"
 
 namespace fbml
@@ -36,7 +35,7 @@ struct IKSettings
   double damping_factor = 1e-2;
 
   // Weights for errors on each axis [vx, vy, vz, wx, wy, wz]
-  fbml::Vector6d task_weights = fbml::Vector6d::Ones();
+  Eigen::Vector<double, 6> task_weights = Eigen::Vector<double, 6>::Ones();
 };
 
 class FBML_PUBLIC Kinematics
