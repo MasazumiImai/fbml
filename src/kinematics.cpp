@@ -51,6 +51,50 @@ Eigen::MatrixXd Kinematics::computeJacobian(
   return J;
 }
 
+std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeManipulability(
+  const Eigen::VectorXd & q, const std::string & frame_name,
+  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
+{
+  Eigen::MatrixXd J_full = computeJacobian(q, frame_name, pinocchio::LOCAL);
+
+  int sub_nv = 0;
+  for (const auto & name : joint_names) {
+    sub_nv += model_.joints[model_.getJointId(name)].nv();
+  }
+
+  Eigen::MatrixXd J_sub(6, sub_nv);
+  int col_offset = 0;
+  for (const auto & name : joint_names) {
+    pinocchio::JointIndex j_id = model_.getJointId(name);
+    int nv_i = model_.joints[j_id].nv();
+    int idx_v = model_.joints[j_id].idx_v();
+    J_sub.middleCols(col_offset, nv_i) = J_full.middleCols(idx_v, nv_i);
+    col_offset += nv_i;
+  }
+
+  Eigen::MatrixXd J_task(task_dims.size(), sub_nv);
+  for (size_t i = 0; i < task_dims.size(); ++i) {
+    J_task.row(i) = J_sub.row(task_dims[i]);
+  }
+
+  Eigen::MatrixXd J_Jt = J_task * J_task.transpose();
+  double measure = std::sqrt(std::abs(J_Jt.determinant()));
+
+  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigensolver(J_Jt);
+  Eigen::VectorXd eigenvalues;
+  Eigen::MatrixXd eigenvectors;
+
+  if (eigensolver.info() == Eigen::Success) {
+    eigenvalues = eigensolver.eigenvalues().cwiseAbs().cwiseSqrt();
+    eigenvectors = eigensolver.eigenvectors();
+  } else {
+    eigenvalues = Eigen::VectorXd::Zero(task_dims.size());
+    eigenvectors = Eigen::MatrixXd::Identity(task_dims.size(), task_dims.size());
+  }
+
+  return {measure, eigenvalues, eigenvectors};
+}
+
 Eigen::Isometry3d Kinematics::solveFK(
   const Eigen::VectorXd & q, const std::string & target_frame, const std::string & reference_frame)
 {

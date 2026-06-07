@@ -17,6 +17,7 @@
 
 #include <Eigen/Dense>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <pinocchio/multibody/data.hpp>
@@ -47,6 +48,10 @@ public:
   Eigen::MatrixXd computeJacobian(
     const Eigen::VectorXd & q, const std::string & frame_name,
     pinocchio::ReferenceFrame reference_frame = pinocchio::LOCAL);
+
+  std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> computeManipulability(
+    const Eigen::VectorXd & q, const std::string & frame_name,
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims = {0, 1, 2});
 
   Eigen::Isometry3d solveFK(
     const Eigen::VectorXd & q, const std::string & target_frame,
