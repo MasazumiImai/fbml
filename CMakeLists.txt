@@ -42,6 +42,8 @@ install(TARGETS ${PROJECT_NAME}
   INCLUDES DESTINATION include
 )
 
+add_compile_definitions(COAL_DISABLE_HPP_FCL_WARNINGS)
+
 # if(BUILD_TESTING)
 #   find_package(ament_lint_auto REQUIRED)
 #   set(ament_cmake_copyright_FOUND TRUE)
