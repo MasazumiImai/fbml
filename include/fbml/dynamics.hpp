@@ -21,7 +21,6 @@
 #include <pinocchio/multibody/data.hpp>
 
 #include "fbml/core.hpp"
-#include "fbml/types.hpp"
 
 namespace fbml
 {
@@ -36,7 +35,7 @@ public:
 
   // ?: Should use struct (PartitionedMassMatrix{fbml::Matrix6d base; Eigen::MatrixXd coupling;}) as output?
   void computePartitionedMassMatrices(
-    const Eigen::VectorXd & q, Eigen::MatrixXd & M_b, Eigen::MatrixXd & M_bm);
+    const Eigen::VectorXd & q, Eigen::Matrix<double, 6, 6> & M_b, Eigen::MatrixXd & M_bm);
 
   Eigen::VectorXd computeNonLinearEffects(const Eigen::VectorXd & q, const Eigen::VectorXd & v);
 

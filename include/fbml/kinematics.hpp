@@ -17,12 +17,12 @@
 
 #include <Eigen/Dense>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include <pinocchio/multibody/data.hpp>
 
 #include "fbml/core.hpp"
-#include "fbml/types.hpp"
 #include "fbml/visibility_control.h"
 
 namespace fbml
@@ -35,7 +35,7 @@ struct IKSettings
   double damping_factor = 1e-2;
 
   // Weights for errors on each axis [vx, vy, vz, wx, wy, wz]
-  fbml::Vector6d task_weights = fbml::Vector6d::Ones();
+  Eigen::Vector<double, 6> task_weights = Eigen::Vector<double, 6>::Ones();
 };
 
 class FBML_PUBLIC Kinematics
@@ -47,6 +47,10 @@ public:
   Eigen::MatrixXd computeJacobian(
     const Eigen::VectorXd & q, const std::string & frame_name,
     pinocchio::ReferenceFrame reference_frame = pinocchio::LOCAL);
+
+  std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> computeManipulability(
+    const Eigen::VectorXd & q, const std::string & frame_name,
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims = {0, 1, 2});
 
   Eigen::Isometry3d solveFK(
     const Eigen::VectorXd & q, const std::string & target_frame,
