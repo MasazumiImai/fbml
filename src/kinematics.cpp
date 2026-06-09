@@ -95,6 +95,83 @@ std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeManipula
   return {measure, eigenvalues, eigenvectors};
 }
 
+std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseManipulability(
+  const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
+  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
+{
+  int k = contact_frame_names.size();
+  if (k == 0) {
+    return {
+      0.0, Eigen::VectorXd::Zero(task_dims.size()),
+      Eigen::MatrixXd::Identity(task_dims.size(), task_dims.size())};
+  }
+
+  int sub_nv = 0;
+  for (const auto & name : joint_names) {
+    sub_nv += model_.joints[model_.getJointId(name)].nv();
+  }
+
+  Eigen::MatrixXd J_b(6 * k, 6);
+  Eigen::MatrixXd J_q(6 * k, sub_nv);
+
+  pinocchio::computeJointJacobians(model_, data_, q);
+  pinocchio::updateFramePlacements(model_, data_);
+
+  for (int i = 0; i < k; ++i) {
+    pinocchio::FrameIndex frame_id = model_.getFrameId(contact_frame_names[i]);
+
+    pinocchio::Data::Matrix6x J_full(6, model_.nv);
+    J_full.setZero();
+    pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL_WORLD_ALIGNED, J_full);
+
+    J_b.block(6 * i, 0, 6, 6) = J_full.block(0, 0, 6, 6);
+
+    int col_offset = 0;
+    for (const auto & name : joint_names) {
+      pinocchio::JointIndex j_id = model_.getJointId(name);
+      int nv_i = model_.joints[j_id].nv();
+      int idx_v = model_.joints[j_id].idx_v();
+      J_q.block(6 * i, col_offset, 6, nv_i) = J_full.block(0, idx_v, 6, nv_i);
+      col_offset += nv_i;
+    }
+  }
+
+  Eigen::JacobiSVD<Eigen::MatrixXd> svd(J_b, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  double tolerance = std::numeric_limits<double>::epsilon() * std::max(J_b.cols(), J_b.rows()) *
+    svd.singularValues().array().abs()(0);
+
+  Eigen::MatrixXd J_b_pinv = svd.matrixV() *
+    (svd.singularValues().array().abs() > tolerance)
+      .select(svd.singularValues().array().inverse(), 0)
+      .matrix()
+      .asDiagonal() *
+    svd.matrixU().adjoint();
+
+  Eigen::MatrixXd J_eq = -J_b_pinv * J_q;
+
+  Eigen::MatrixXd J_eq_task(task_dims.size(), sub_nv);
+  for (size_t i = 0; i < task_dims.size(); ++i) {
+    J_eq_task.row(i) = J_eq.row(task_dims[i]);
+  }
+
+  Eigen::MatrixXd J_Jt = J_eq_task * J_eq_task.transpose();
+  double measure = std::sqrt(std::abs(J_Jt.determinant()));
+
+  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigensolver(J_Jt);
+  Eigen::VectorXd eigenvalues;
+  Eigen::MatrixXd eigenvectors;
+
+  if (eigensolver.info() == Eigen::Success) {
+    eigenvalues = eigensolver.eigenvalues().cwiseAbs().cwiseSqrt();
+    eigenvectors = eigensolver.eigenvectors();
+  } else {
+    eigenvalues = Eigen::VectorXd::Zero(task_dims.size());
+    eigenvectors = Eigen::MatrixXd::Identity(task_dims.size(), task_dims.size());
+  }
+
+  return {measure, eigenvalues, eigenvectors};
+}
+
 Eigen::Isometry3d Kinematics::solveFK(
   const Eigen::VectorXd & q, const std::string & target_frame, const std::string & reference_frame)
 {
