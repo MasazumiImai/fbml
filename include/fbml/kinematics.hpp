@@ -52,6 +52,10 @@ public:
     const Eigen::VectorXd & q, const std::string & frame_name,
     const std::vector<std::string> & joint_names, const std::vector<int> & task_dims = {0, 1, 2});
 
+  std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> computeBaseManipulability(
+    const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims = {0, 1, 2});
+
   Eigen::Isometry3d solveFK(
     const Eigen::VectorXd & q, const std::string & target_frame,
     const std::string & reference_frame = "world");
