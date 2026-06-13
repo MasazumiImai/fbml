@@ -44,6 +44,9 @@ public:
   std::vector<std::string> getJointNamesBetweenFrames(
     const std::string & start_frame_name, const std::string & end_frame_name) const;
 
+  bool isWithinJointLimits(
+    const Eigen::VectorXd & q, const std::vector<std::string> & joint_names) const;
+
 private:
   pinocchio::Model model_;
 };
