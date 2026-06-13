@@ -26,7 +26,7 @@ namespace fbml
 {
 
 Kinematics::Kinematics(const RobotCore & core)
-: model_(core.getModel()), data_(pinocchio::Data(model_))
+: model_(core.getModel()), data_(pinocchio::Data(model_)), core_(core)
 {
 }
 
@@ -207,8 +207,6 @@ bool Kinematics::solveNumericalIK(
   const std::vector<std::string> & joint_names, const std::string & reference_frame,
   const IKSettings & settings)
 {
-  // TODO: Add kinematic feasibility (joint limits) check (Stop if a joint seems like it’s about to exceed its limit)
-
   pinocchio::SE3 des_pose_se3(desired_pose.rotation(), desired_pose.translation());
 
   if (!model_.existFrame(frame_name)) {
@@ -256,7 +254,7 @@ bool Kinematics::solveNumericalIK(
     error = settings.task_weights.cwiseProduct(error);
 
     if (error.norm() < settings.tolerance) {
-      return true;
+      return core_.isWithinJointLimits(q, joint_names);
     }
 
     J_full.setZero();

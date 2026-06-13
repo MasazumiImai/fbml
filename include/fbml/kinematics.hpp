@@ -86,6 +86,7 @@ public:
 private:
   const pinocchio::Model & model_;
   pinocchio::Data data_;
+  const RobotCore & core_;
 };
 
 }  // namespace fbml

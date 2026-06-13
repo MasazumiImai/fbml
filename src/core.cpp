@@ -120,4 +120,27 @@ std::vector<std::string> RobotCore::getJointNamesBetweenFrames(
   return joint_names;
 }
 
+bool RobotCore::isWithinJointLimits(
+  const Eigen::VectorXd & q, const std::vector<std::string> & joint_names) const
+{
+  for (const auto & j_name : joint_names) {
+    if (!model_.existJointName(j_name)) continue;
+
+    auto j_id = model_.getJointId(j_name);
+    int idx_q = model_.joints[j_id].idx_q();
+    int nv = model_.joints[j_id].nv();
+
+    if (nv == 1) {  // Revolute joint
+      double current_angle = q[idx_q];
+
+      if (
+        current_angle < model_.lowerPositionLimit[idx_q] ||
+        current_angle > model_.upperPositionLimit[idx_q]) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 }  // namespace fbml
