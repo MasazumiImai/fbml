@@ -28,6 +28,12 @@ namespace fbml
 Kinematics::Kinematics(const RobotCore & core)
 : model_(core.getModel()), data_(pinocchio::Data(model_)), core_(core)
 {
+  const int nv = model_.nv;
+  j_ac_ = pinocchio::Data::Matrix6x(6, nv);
+  j_ac_.setZero();
+  j_sub_ = Eigen::MatrixXd::Zero(6, nv);
+  manip_j_task_ = Eigen::MatrixXd::Zero(6, nv);
+  bmanip_jeq_task_ = Eigen::MatrixXd::Zero(6, nv);
 }
 
 Eigen::MatrixXd Kinematics::computeJacobian(
@@ -51,125 +57,184 @@ Eigen::MatrixXd Kinematics::computeJacobian(
   return J;
 }
 
-std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeManipulability(
+void Kinematics::computeFrameJacobianInto(
   const Eigen::VectorXd & q, const std::string & frame_name,
-  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
+  pinocchio::ReferenceFrame reference_frame)
 {
-  Eigen::MatrixXd J_full = computeJacobian(q, frame_name, pinocchio::LOCAL);
-
-  int sub_nv = 0;
-  for (const auto & name : joint_names) {
-    sub_nv += model_.joints[model_.getJointId(name)].nv();
+  if (!model_.existFrame(frame_name)) {
+    throw std::invalid_argument("Frame '" + frame_name + "' does not exist in the model.");
   }
 
-  Eigen::MatrixXd J_sub(6, sub_nv);
-  int col_offset = 0;
+  pinocchio::computeJointJacobians(model_, data_, q);
+  pinocchio::updateFramePlacements(model_, data_);
+
+  pinocchio::FrameIndex frame_id = model_.getFrameId(frame_name);
+  j_ac_.setZero();
+  pinocchio::getFrameJacobian(model_, data_, frame_id, reference_frame, j_ac_);
+}
+
+int Kinematics::assembleSubJacobian(const std::vector<std::string> & joint_names)
+{
+  int sub_nv = 0;
   for (const auto & name : joint_names) {
+    if (!model_.existJointName(name)) {
+      throw std::invalid_argument("Joint '" + name + "' does not exist.");
+    }
     pinocchio::JointIndex j_id = model_.getJointId(name);
     int nv_i = model_.joints[j_id].nv();
     int idx_v = model_.joints[j_id].idx_v();
-    J_sub.middleCols(col_offset, nv_i) = J_full.middleCols(idx_v, nv_i);
-    col_offset += nv_i;
+    j_sub_.middleCols(sub_nv, nv_i) = j_ac_.middleCols(idx_v, nv_i);
+    sub_nv += nv_i;
   }
-
-  Eigen::MatrixXd J_task(task_dims.size(), sub_nv);
-  for (size_t i = 0; i < task_dims.size(); ++i) {
-    J_task.row(i) = J_sub.row(task_dims[i]);
-  }
-
-  Eigen::MatrixXd J_Jt = J_task * J_task.transpose();
-  double measure = std::sqrt(std::abs(J_Jt.determinant()));
-
-  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigensolver(J_Jt);
-  Eigen::VectorXd eigenvalues;
-  Eigen::MatrixXd eigenvectors;
-
-  if (eigensolver.info() == Eigen::Success) {
-    eigenvalues = eigensolver.eigenvalues().cwiseAbs().cwiseSqrt();
-    eigenvectors = eigensolver.eigenvectors();
-  } else {
-    eigenvalues = Eigen::VectorXd::Zero(task_dims.size());
-    eigenvectors = Eigen::MatrixXd::Identity(task_dims.size(), task_dims.size());
-  }
-
-  return {measure, eigenvalues, eigenvectors};
+  return sub_nv;
 }
 
-std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseManipulability(
+double Kinematics::computeManipulabilityCore(
+  const Eigen::VectorXd & q, const std::string & frame_name,
+  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
+{
+  computeFrameJacobianInto(q, frame_name, pinocchio::LOCAL);
+  int sub_nv = assembleSubJacobian(joint_names);
+  int t = static_cast<int>(task_dims.size());
+
+  for (int i = 0; i < t; ++i) {
+    manip_j_task_.row(i).head(sub_nv) = j_sub_.row(task_dims[i]).head(sub_nv);
+  }
+
+  const auto Jt = manip_j_task_.topLeftCorner(t, sub_nv);
+  auto JJt = manip_jjt_.topLeftCorner(t, t);
+  JJt.noalias() = Jt * Jt.transpose();
+  return std::sqrt(std::abs(JJt.determinant()));
+}
+
+double Kinematics::computeManipulability(
+  const Eigen::VectorXd & q, const std::string & frame_name,
+  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
+{
+  return computeManipulabilityCore(q, frame_name, joint_names, task_dims);
+}
+
+double Kinematics::computeManipulability(
+  const Eigen::VectorXd & q, const std::string & frame_name,
+  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+  Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out)
+{
+  double measure = computeManipulabilityCore(q, frame_name, joint_names, task_dims);
+  int t = static_cast<int>(task_dims.size());
+
+  auto JJt = manip_jjt_.topLeftCorner(t, t);
+  manip_eig_.compute(JJt);
+  if (manip_eig_.info() == Eigen::Success) {
+    eigenvalues_out = manip_eig_.eigenvalues().cwiseAbs().cwiseSqrt();
+    eigenvectors_out = manip_eig_.eigenvectors();
+  } else {
+    eigenvalues_out = Eigen::VectorXd::Zero(t);
+    eigenvectors_out = Eigen::MatrixXd::Identity(t, t);
+  }
+  return measure;
+}
+
+double Kinematics::computeBaseManipulabilityCore(
   const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
   const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
 {
-  int k = contact_frame_names.size();
+  int k = static_cast<int>(contact_frame_names.size());
   if (k == 0) {
-    return {
-      0.0, Eigen::VectorXd::Zero(task_dims.size()),
-      Eigen::MatrixXd::Identity(task_dims.size(), task_dims.size())};
+    return -1.0;  // sentinel: no contact frames
   }
+
+  int t = static_cast<int>(task_dims.size());
 
   int sub_nv = 0;
   for (const auto & name : joint_names) {
+    if (!model_.existJointName(name)) {
+      throw std::invalid_argument("Joint '" + name + "' does not exist.");
+    }
     sub_nv += model_.joints[model_.getJointId(name)].nv();
   }
 
-  Eigen::MatrixXd J_b(6 * k, 6);
-  Eigen::MatrixXd J_q(6 * k, sub_nv);
+  bmanip_jb_.resize(6 * k, 6);
+  bmanip_jq_.resize(6 * k, sub_nv);
 
   pinocchio::computeJointJacobians(model_, data_, q);
   pinocchio::updateFramePlacements(model_, data_);
 
   for (int i = 0; i < k; ++i) {
+    if (!model_.existFrame(contact_frame_names[i])) {
+      throw std::invalid_argument("Frame '" + contact_frame_names[i] + "' does not exist.");
+    }
     pinocchio::FrameIndex frame_id = model_.getFrameId(contact_frame_names[i]);
+    j_ac_.setZero();
+    pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL_WORLD_ALIGNED, j_ac_);
 
-    pinocchio::Data::Matrix6x J_full(6, model_.nv);
-    J_full.setZero();
-    pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL_WORLD_ALIGNED, J_full);
-
-    J_b.block(6 * i, 0, 6, 6) = J_full.block(0, 0, 6, 6);
+    bmanip_jb_.block(6 * i, 0, 6, 6) = j_ac_.block(0, 0, 6, 6);
 
     int col_offset = 0;
     for (const auto & name : joint_names) {
       pinocchio::JointIndex j_id = model_.getJointId(name);
       int nv_i = model_.joints[j_id].nv();
       int idx_v = model_.joints[j_id].idx_v();
-      J_q.block(6 * i, col_offset, 6, nv_i) = J_full.block(0, idx_v, 6, nv_i);
+      bmanip_jq_.block(6 * i, col_offset, 6, nv_i) = j_ac_.block(0, idx_v, 6, nv_i);
       col_offset += nv_i;
     }
   }
 
-  Eigen::JacobiSVD<Eigen::MatrixXd> svd(J_b, Eigen::ComputeThinU | Eigen::ComputeThinV);
-  double tolerance = std::numeric_limits<double>::epsilon() * std::max(J_b.cols(), J_b.rows()) *
-    svd.singularValues().array().abs()(0);
+  // Pseudo-inverse of J_b via thin SVD: J_b^+ = V * Sigma^-1 * U^T
+  bmanip_svd_.compute(bmanip_jb_, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  const auto & sv = bmanip_svd_.singularValues();
+  double tolerance = std::numeric_limits<double>::epsilon() * std::max(6 * k, 6) * std::abs(sv(0));
 
-  Eigen::MatrixXd J_b_pinv = svd.matrixV() *
-    (svd.singularValues().array().abs() > tolerance)
-      .select(svd.singularValues().array().inverse(), 0)
-      .matrix()
-      .asDiagonal() *
-    svd.matrixU().adjoint();
-
-  Eigen::MatrixXd J_eq = -J_b_pinv * J_q;
-
-  Eigen::MatrixXd J_eq_task(task_dims.size(), sub_nv);
-  for (size_t i = 0; i < task_dims.size(); ++i) {
-    J_eq_task.row(i) = J_eq.row(task_dims[i]);
+  Eigen::Matrix<double, 6, 1> sv_inv;
+  for (int i = 0; i < sv.size(); ++i) {
+    sv_inv(i) = (std::abs(sv(i)) > tolerance) ? (1.0 / sv(i)) : 0.0;
   }
 
-  Eigen::MatrixXd J_Jt = J_eq_task * J_eq_task.transpose();
-  double measure = std::sqrt(std::abs(J_Jt.determinant()));
+  bmanip_vd_.noalias() = bmanip_svd_.matrixV() * sv_inv.asDiagonal();
+  bmanip_pinv_.noalias() = bmanip_vd_ * bmanip_svd_.matrixU().adjoint();
+  bmanip_jeq_.noalias() = -bmanip_pinv_ * bmanip_jq_;
 
-  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigensolver(J_Jt);
-  Eigen::VectorXd eigenvalues;
-  Eigen::MatrixXd eigenvectors;
+  for (int i = 0; i < t; ++i) {
+    bmanip_jeq_task_.row(i).head(sub_nv) = bmanip_jeq_.row(task_dims[i]).head(sub_nv);
+  }
 
-  if (eigensolver.info() == Eigen::Success) {
-    eigenvalues = eigensolver.eigenvalues().cwiseAbs().cwiseSqrt();
-    eigenvectors = eigensolver.eigenvectors();
+  const auto Jt = bmanip_jeq_task_.topLeftCorner(t, sub_nv);
+  auto JJt = manip_jjt_.topLeftCorner(t, t);
+  JJt.noalias() = Jt * Jt.transpose();
+  return std::sqrt(std::abs(JJt.determinant()));
+}
+
+double Kinematics::computeBaseManipulability(
+  const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
+  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
+{
+  double measure = computeBaseManipulabilityCore(q, contact_frame_names, joint_names, task_dims);
+  return (measure < 0.0) ? 0.0 : measure;
+}
+
+double Kinematics::computeBaseManipulability(
+  const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
+  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+  Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out)
+{
+  int t = static_cast<int>(task_dims.size());
+  double measure = computeBaseManipulabilityCore(q, contact_frame_names, joint_names, task_dims);
+
+  if (measure < 0.0) {  // no contact frames
+    eigenvalues_out = Eigen::VectorXd::Zero(t);
+    eigenvectors_out = Eigen::MatrixXd::Identity(t, t);
+    return 0.0;
+  }
+
+  auto JJt = manip_jjt_.topLeftCorner(t, t);
+  manip_eig_.compute(JJt);
+  if (manip_eig_.info() == Eigen::Success) {
+    eigenvalues_out = manip_eig_.eigenvalues().cwiseAbs().cwiseSqrt();
+    eigenvectors_out = manip_eig_.eigenvectors();
   } else {
-    eigenvalues = Eigen::VectorXd::Zero(task_dims.size());
-    eigenvectors = Eigen::MatrixXd::Identity(task_dims.size(), task_dims.size());
+    eigenvalues_out = Eigen::VectorXd::Zero(t);
+    eigenvectors_out = Eigen::MatrixXd::Identity(t, t);
   }
-
-  return {measure, eigenvalues, eigenvectors};
+  return measure;
 }
 
 Eigen::Isometry3d Kinematics::solveFK(
@@ -294,38 +359,21 @@ bool Kinematics::solveNumericalIK(
   return false;
 }
 
-Eigen::VectorXd Kinematics::solveIVK(
+void Kinematics::solveIVK(
   const Eigen::VectorXd & q, const std::string & frame_name,
   const Eigen::Vector<double, 6> & desired_twist_in_local,
-  const std::vector<std::string> & joint_names, double damping_factor)
+  const std::vector<std::string> & joint_names, Eigen::Ref<Eigen::VectorXd> joint_vel_out,
+  double damping_factor)
 {
-  Eigen::MatrixXd J_full = computeJacobian(q, frame_name, pinocchio::LOCAL);
+  computeFrameJacobianInto(q, frame_name, pinocchio::LOCAL);
+  int sub_nv = assembleSubJacobian(joint_names);
 
-  int sub_nv = 0;
-  for (const auto & name : joint_names) {
-    if (!model_.existJointName(name)) {
-      throw std::invalid_argument("Joint '" + name + "' does not exist.");
-    }
-    sub_nv += model_.joints[model_.getJointId(name)].nv();
-  }
+  const auto J = j_sub_.leftCols(sub_nv);
+  dls_A_.noalias() = J * J.transpose();
+  dls_A_.diagonal().array() += damping_factor * damping_factor;
 
-  Eigen::MatrixXd J_sub(6, sub_nv);
-  int col_offset = 0;
-  for (const auto & name : joint_names) {
-    pinocchio::JointIndex j_id = model_.getJointId(name);
-    int nv_i = model_.joints[j_id].nv();
-    int idx_v = model_.joints[j_id].idx_v();
-
-    J_sub.middleCols(col_offset, nv_i) = J_full.middleCols(idx_v, nv_i);
-    col_offset += nv_i;
-  }
-
-  Eigen::MatrixXd J_Jt = J_sub * J_sub.transpose();
-  Eigen::MatrixXd A = J_Jt + (damping_factor * damping_factor) * Eigen::MatrixXd::Identity(6, 6);
-
-  Eigen::VectorXd joint_vel = J_sub.transpose() * A.ldlt().solve(desired_twist_in_local);
-
-  return joint_vel;
+  joint_vel_out.head(sub_nv).noalias() =
+    J.transpose() * dls_A_.ldlt().solve(desired_twist_in_local);
 }
 
 }  // namespace fbml

@@ -48,13 +48,33 @@ public:
     const Eigen::VectorXd & q, const std::string & frame_name,
     pinocchio::ReferenceFrame reference_frame = pinocchio::LOCAL);
 
-  std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> computeManipulability(
+  /**
+   * @brief Compute the manipulability measure for a given joint configuration and task dimensions.
+   *
+   * @return The manipulability measure.
+   */
+  double computeManipulability(
     const Eigen::VectorXd & q, const std::string & frame_name,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims = {0, 1, 2});
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
 
-  std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> computeBaseManipulability(
+  /**
+   * @brief Compute the manipulability measure + ellipsoid for a given joint configuration and task dimensions.
+   *
+   * @return The manipulability measure.
+   */
+  double computeManipulability(
+    const Eigen::VectorXd & q, const std::string & frame_name,
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+    Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out);
+
+  double computeBaseManipulability(
     const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims = {0, 1, 2});
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
+
+  double computeBaseManipulability(
+    const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+    Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out);
 
   Eigen::Isometry3d solveFK(
     const Eigen::VectorXd & q, const std::string & target_frame,
@@ -78,15 +98,51 @@ public:
     return solveNumericalIK(q, frame_name, desired_pose, joint_names, reference_frame, settings);
   }
 
-  Eigen::VectorXd solveIVK(
+  void solveIVK(
     const Eigen::VectorXd & q, const std::string & frame_name,
     const Eigen::Vector<double, 6> & desired_twist_in_local,
-    const std::vector<std::string> & joint_names, double damping_factor = 1e-2);
+    const std::vector<std::string> & joint_names, Eigen::Ref<Eigen::VectorXd> joint_vel_out,
+    double damping_factor = 1e-2);
 
 private:
+  /**
+   * @brief Compute the frame Jacobian expressed in the given reference frame.
+   */
+  void computeFrameJacobianInto(
+    const Eigen::VectorXd & q, const std::string & frame_name,
+    pinocchio::ReferenceFrame reference_frame);
+
+  int assembleSubJacobian(const std::vector<std::string> & joint_names);
+
+  double computeManipulabilityCore(
+    const Eigen::VectorXd & q, const std::string & frame_name,
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
+
+  double computeBaseManipulabilityCore(
+    const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
+
   const pinocchio::Model & model_;
   pinocchio::Data data_;
   const RobotCore & core_;
+
+  // --- Preallocated workspaces ---
+
+  pinocchio::Data::Matrix6x j_ac_;     // 6 x nv frame Jacobian
+  Eigen::MatrixXd j_sub_;              // 6 x nv sub-Jacobian
+  Eigen::Matrix<double, 6, 6> dls_A_;  // solveIVK DLS system matrix
+
+  Eigen::MatrixXd manip_j_task_;           // 6 x nv
+  Eigen::Matrix<double, 6, 6> manip_jjt_;  // J J^T
+  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> manip_eig_;
+
+  Eigen::MatrixXd bmanip_jb_;              // 6k x 6
+  Eigen::MatrixXd bmanip_jq_;              // 6k x sub_nv
+  Eigen::Matrix<double, 6, 6> bmanip_vd_;  // V * Sigma^-1
+  Eigen::MatrixXd bmanip_pinv_;            // 6 x 6k
+  Eigen::MatrixXd bmanip_jeq_;             // 6 x sub_nv
+  Eigen::MatrixXd bmanip_jeq_task_;        // 6 x nv
+  Eigen::JacobiSVD<Eigen::MatrixXd> bmanip_svd_;
 };
 
 }  // namespace fbml
