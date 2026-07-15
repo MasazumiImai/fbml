@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.8)
 project(fbml)
 
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the build type" FORCE)
+  message(STATUS "fbml: CMAKE_BUILD_TYPE not set, defaulting to Release (-O3).")
+endif()
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
