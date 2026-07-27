@@ -16,6 +16,7 @@
 
 #include <stdexcept>
 
+#include <pinocchio/algorithm/center-of-mass.hpp>
 #include <pinocchio/algorithm/frames.hpp>
 #include <pinocchio/algorithm/jacobian.hpp>
 #include <pinocchio/algorithm/joint-configuration.hpp>
@@ -34,6 +35,13 @@ Kinematics::Kinematics(const RobotCore & core)
   j_sub_ = Eigen::MatrixXd::Zero(6, nv);
   manip_j_task_ = Eigen::MatrixXd::Zero(6, nv);
   bmanip_jeq_task_ = Eigen::MatrixXd::Zero(6, nv);
+}
+
+ComState Kinematics::computeComState(
+  const Eigen::VectorXd & q, const Eigen::VectorXd & v, const Eigen::VectorXd & a)
+{
+  pinocchio::centerOfMass(model_, data_, q, v, a);
+  return {data_.com[0], data_.vcom[0], data_.acom[0]};
 }
 
 Eigen::MatrixXd Kinematics::computeJacobian(
