@@ -17,7 +17,7 @@ git clone https://github.com/MasazumiImai/fbml.git
 
 # Build
 cd ~/fbml_ws
-colcon build --packages-select fbml --symlink-install
+colcon build --packages-select fbml
 source install/setup.bash
 ```
 
