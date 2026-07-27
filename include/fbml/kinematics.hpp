@@ -28,6 +28,13 @@
 namespace fbml
 {
 
+struct ComState
+{
+  Eigen::Vector3d position = Eigen::Vector3d::Zero();
+  Eigen::Vector3d velocity = Eigen::Vector3d::Zero();
+  Eigen::Vector3d acceleration = Eigen::Vector3d::Zero();
+};
+
 struct IKSettings
 {
   double tolerance = 1e-4;
@@ -43,6 +50,9 @@ class FBML_PUBLIC Kinematics
 public:
   explicit Kinematics(const RobotCore & core);
   virtual ~Kinematics() = default;
+
+  ComState computeComState(
+    const Eigen::VectorXd & q, const Eigen::VectorXd & v, const Eigen::VectorXd & a);
 
   Eigen::MatrixXd computeJacobian(
     const Eigen::VectorXd & q, const std::string & frame_name,
