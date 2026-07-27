@@ -36,6 +36,8 @@ public:
 
   const pinocchio::Model & getModel() const { return model_; }
 
+  double getTotalMass() const;
+
   void setActuatorParameters(double armature, double damping);
 
   void setActuatorParameters(

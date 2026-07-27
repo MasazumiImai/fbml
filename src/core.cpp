@@ -17,6 +17,7 @@
 #include <iostream>
 #include <stdexcept>
 
+#include <pinocchio/algorithm/center-of-mass.hpp>
 #include <pinocchio/parsers/urdf.hpp>
 
 namespace fbml
@@ -36,6 +37,11 @@ RobotCore::RobotCore(const std::string & urdf_path, const Eigen::Vector3d & grav
     std::cerr << e.what() << std::endl;
     throw;
   }
+}
+
+double RobotCore::getTotalMass() const
+{
+  return pinocchio::computeTotalMass(model_);
 }
 
 void RobotCore::setActuatorParameters(double armature, double damping)
