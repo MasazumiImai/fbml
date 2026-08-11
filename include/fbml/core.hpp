@@ -38,6 +38,8 @@ public:
 
   double getTotalMass() const;
 
+  Eigen::VectorXd neutralConfiguration() const;
+
   void setActuatorParameters(double armature, double damping);
 
   void setActuatorParameters(
