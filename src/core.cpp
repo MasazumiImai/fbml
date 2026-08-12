@@ -50,6 +50,21 @@ Eigen::VectorXd RobotCore::neutralConfiguration() const
   return pinocchio::neutral(model_);
 }
 
+Eigen::VectorXd RobotCore::configurationFromJointMap(
+  const std::map<std::string, double> & joints) const
+{
+  Eigen::VectorXd q = pinocchio::neutral(model_);
+  for (const auto & [name, value] : joints) {
+    if (!model_.existJointName(name)) {
+      continue;
+    }
+    const auto joint_id = model_.getJointId(name);
+    if (model_.nqs[joint_id] == 1) {
+      q[model_.idx_qs[joint_id]] = value;
+    }
+  }
+  return q;
+}
 void RobotCore::setActuatorParameters(double armature, double damping)
 {
   const int num_actuated_joints = model_.nv - 6;
