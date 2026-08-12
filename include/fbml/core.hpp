@@ -16,6 +16,7 @@
 #define FBML__CORE_HPP_
 
 #include <Eigen/Dense>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -39,6 +40,9 @@ public:
   double getTotalMass() const;
 
   Eigen::VectorXd neutralConfiguration() const;
+
+  // Neutral configuration with the named single-DOF joints overwritten.
+  Eigen::VectorXd configurationFromJointMap(const std::map<std::string, double> & joints) const;
 
   void setActuatorParameters(double armature, double damping);
 
