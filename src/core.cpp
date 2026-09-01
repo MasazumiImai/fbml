@@ -70,8 +70,8 @@ void RobotCore::setActuatorParameters(double armature, double damping)
   const int num_actuated_joints = model_.nv - 6;
 
   if (num_actuated_joints > 0) {
-    model_.rotorInertia.tail(num_actuated_joints).setConstant(armature);
-    model_.friction.tail(num_actuated_joints).setConstant(damping);
+    model_.armature.tail(num_actuated_joints).setConstant(armature);
+    model_.damping.tail(num_actuated_joints).setConstant(damping);
   }
 }
 
@@ -87,8 +87,8 @@ void RobotCore::setActuatorParameters(
       std::to_string(num_actuated_joints) + ").");
   }
 
-  model_.rotorInertia.tail(num_actuated_joints) = armature_vector;
-  model_.friction.tail(num_actuated_joints) = damping_vector;
+  model_.armature.tail(num_actuated_joints) = armature_vector;
+  model_.damping.tail(num_actuated_joints) = damping_vector;
 }
 
 std::vector<std::string> RobotCore::getJointNamesBetweenFrames(
