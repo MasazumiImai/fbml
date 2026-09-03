@@ -14,7 +14,9 @@
 
 #include "fbml/kinematics.hpp"
 
+#include <algorithm>
 #include <stdexcept>
+#include <tuple>
 
 #include <pinocchio/algorithm/center-of-mass.hpp>
 #include <pinocchio/algorithm/frames.hpp>
@@ -34,7 +36,6 @@ Kinematics::Kinematics(const RobotCore & core)
   j_ac_.setZero();
   j_sub_ = Eigen::MatrixXd::Zero(6, nv);
   manip_j_task_ = Eigen::MatrixXd::Zero(6, nv);
-  bmanip_jeq_task_ = Eigen::MatrixXd::Zero(6, nv);
 }
 
 ComState Kinematics::computeComState(
@@ -142,17 +143,19 @@ double Kinematics::computeManipulability(
   return measure;
 }
 
-double Kinematics::computeBaseManipulabilityCore(
+std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseManipulability(
   const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
   const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
 {
-  int k = static_cast<int>(contact_frame_names.size());
+  const int k = static_cast<int>(contact_frame_names.size());
+
   if (k == 0) {
-    return -1.0;  // sentinel: no contact frames
+    return {
+      0.0, Eigen::VectorXd::Zero(task_dims.size()),
+      Eigen::MatrixXd::Identity(task_dims.size(), task_dims.size())};
   }
 
-  int t = static_cast<int>(task_dims.size());
-
+  // 1. Stacked base and supporting-joint Jacobians: J_b v_b + J_q qdot = 0
   int sub_nv = 0;
   for (const auto & name : joint_names) {
     if (!model_.existJointName(name)) {
@@ -161,8 +164,8 @@ double Kinematics::computeBaseManipulabilityCore(
     sub_nv += model_.joints[model_.getJointId(name)].nv();
   }
 
-  bmanip_jb_.resize(6 * k, 6);
-  bmanip_jq_.resize(6 * k, sub_nv);
+  Eigen::MatrixXd J_b = Eigen::MatrixXd::Zero(6 * k, 6);
+  Eigen::MatrixXd J_q = Eigen::MatrixXd::Zero(6 * k, sub_nv);
 
   pinocchio::computeJointJacobians(model_, data_, q);
   pinocchio::updateFramePlacements(model_, data_);
@@ -171,78 +174,140 @@ double Kinematics::computeBaseManipulabilityCore(
     if (!model_.existFrame(contact_frame_names[i])) {
       throw std::invalid_argument("Frame '" + contact_frame_names[i] + "' does not exist.");
     }
-    pinocchio::FrameIndex frame_id = model_.getFrameId(contact_frame_names[i]);
-    j_ac_.setZero();
-    pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL_WORLD_ALIGNED, j_ac_);
 
-    bmanip_jb_.block(6 * i, 0, 6, 6) = j_ac_.block(0, 0, 6, 6);
+    const pinocchio::FrameIndex frame_id = model_.getFrameId(contact_frame_names[i]);
 
+    pinocchio::Data::Matrix6x J_full(6, model_.nv);
+    J_full.setZero();
+    pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL_WORLD_ALIGNED, J_full);
+
+    // Floating-base contribution
+    J_b.block(6 * i, 0, 6, 6) = J_full.block(0, 0, 6, 6);
+
+    // Supporting-joint contribution
     int col_offset = 0;
     for (const auto & name : joint_names) {
-      pinocchio::JointIndex j_id = model_.getJointId(name);
-      int nv_i = model_.joints[j_id].nv();
-      int idx_v = model_.joints[j_id].idx_v();
-      bmanip_jq_.block(6 * i, col_offset, 6, nv_i) = j_ac_.block(0, idx_v, 6, nv_i);
+      const pinocchio::JointIndex j_id = model_.getJointId(name);
+      const int nv_i = model_.joints[j_id].nv();
+      const int idx_v = model_.joints[j_id].idx_v();
+
+      J_q.block(6 * i, col_offset, 6, nv_i) = J_full.block(0, idx_v, 6, nv_i);
       col_offset += nv_i;
     }
   }
 
-  // Pseudo-inverse of J_b via thin SVD: J_b^+ = V * Sigma^-1 * U^T
-  bmanip_svd_.compute(bmanip_jb_, Eigen::ComputeThinU | Eigen::ComputeThinV);
-  const auto & sv = bmanip_svd_.singularValues();
-  double tolerance = std::numeric_limits<double>::epsilon() * std::max(6 * k, 6) * std::abs(sv(0));
+  // 2. SVD of J_b (full U for its left null space); rigid 6-DoF contacts imply rank 6.
+  Eigen::JacobiSVD<Eigen::MatrixXd> svd_b(J_b, Eigen::ComputeFullU | Eigen::ComputeFullV);
+  const Eigen::VectorXd sigma_b = svd_b.singularValues();
+  const double sigma_b_max = (sigma_b.size() > 0) ? sigma_b.maxCoeff() : 0.0;
 
-  Eigen::Matrix<double, 6, 1> sv_inv;
-  for (int i = 0; i < sv.size(); ++i) {
-    sv_inv(i) = (std::abs(sv(i)) > tolerance) ? (1.0 / sv(i)) : 0.0;
+  // Relative tolerance so round-off residuals are not classified as physical constraints.
+  constexpr double rank_rel_tol = 1.0e-10;
+  const double tol_b = rank_rel_tol * std::max(1.0, sigma_b_max);
+
+  int rank_b = 0;
+  for (int i = 0; i < sigma_b.size(); ++i) {
+    if (sigma_b[i] > tol_b) {
+      ++rank_b;
+    }
   }
 
-  bmanip_vd_.noalias() = bmanip_svd_.matrixV() * sv_inv.asDiagonal();
-  bmanip_pinv_.noalias() = bmanip_vd_ * bmanip_svd_.matrixU().adjoint();
-  bmanip_jeq_.noalias() = -bmanip_pinv_ * bmanip_jq_;
-
-  for (int i = 0; i < t; ++i) {
-    bmanip_jeq_task_.row(i).head(sub_nv) = bmanip_jeq_.row(task_dims[i]).head(sub_nv);
+  // A unique base velocity cannot be obtained unless J_b has full column rank.
+  if (rank_b < 6) {
+    return {
+      0.0, Eigen::VectorXd::Zero(task_dims.size()),
+      Eigen::MatrixXd::Identity(task_dims.size(), task_dims.size())};
   }
 
-  const auto Jt = bmanip_jeq_task_.topLeftCorner(t, sub_nv);
-  auto JJt = manip_jjt_.topLeftCorner(t, t);
-  JJt.noalias() = Jt * Jt.transpose();
-  return std::sqrt(std::abs(JJt.determinant()));
+  Eigen::MatrixXd Sigma_b_inv = Eigen::MatrixXd::Zero(6, 6);
+  for (int i = 0; i < 6; ++i) {
+    Sigma_b_inv(i, i) = 1.0 / sigma_b[i];
+  }
+
+  // J_b^dagger = V Sigma^-1 U_r^T, with U_r the first six columns of U.
+  const Eigen::MatrixXd U_r = svd_b.matrixU().leftCols(6);
+  const Eigen::MatrixXd J_b_pinv = svd_b.matrixV() * Sigma_b_inv * U_r.transpose();
+
+  // 3. Closed-chain consistency: U_perp^T J_q qdot = 0, U_perp = left null space of J_b.
+  const int left_nullity_b = J_b.rows() - rank_b;
+
+  Eigen::MatrixXd N_c;
+
+  if (left_nullity_b == 0) {
+    // Single rigid 6-DoF contact: every supporting-joint velocity is compatible.
+    N_c = Eigen::MatrixXd::Identity(sub_nv, sub_nv);
+  } else {
+    const Eigen::MatrixXd U_perp = svd_b.matrixU().rightCols(left_nullity_b);
+    const Eigen::MatrixXd C = U_perp.transpose() * J_q;
+
+    // 4. Orthonormal basis N_c of Null(C): qdot = N_c xidot
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd_c(C, Eigen::ComputeFullV);
+    const Eigen::VectorXd sigma_c = svd_c.singularValues();
+    const double sigma_c_max = (sigma_c.size() > 0) ? sigma_c.maxCoeff() : 0.0;
+    const double tol_c = rank_rel_tol * std::max({1.0, sigma_c_max, J_q.norm()});
+
+    int rank_c = 0;
+    for (int i = 0; i < sigma_c.size(); ++i) {
+      if (sigma_c[i] > tol_c) {
+        ++rank_c;
+      }
+    }
+
+    const int nullity_c = sub_nv - rank_c;
+    if (nullity_c <= 0) {
+      return {
+        0.0, Eigen::VectorXd::Zero(task_dims.size()),
+        Eigen::MatrixXd::Identity(task_dims.size(), task_dims.size())};
+    }
+
+    N_c = svd_c.matrixV().rightCols(nullity_c);
+  }
+
+  // 5. Constraint-consistent equivalent Jacobian: v_b = -J_b^dagger J_q N_c xidot = J_eq xidot
+  const Eigen::MatrixXd J_eq = -J_b_pinv * J_q * N_c;
+
+  Eigen::MatrixXd J_eq_task(task_dims.size(), J_eq.cols());
+  for (size_t i = 0; i < task_dims.size(); ++i) {
+    if (task_dims[i] < 0 || task_dims[i] >= J_eq.rows()) {
+      throw std::out_of_range("Invalid task dimension.");
+    }
+    J_eq_task.row(i) = J_eq.row(task_dims[i]);
+  }
+
+  // 6. Manipulability: w = sqrt(det(J_eq J_eq^T))
+  const Eigen::MatrixXd J_Jt = J_eq_task * J_eq_task.transpose();
+
+  // Fewer admissible DoF than the evaluated task means zero full-dimensional manipulability.
+  double measure = 0.0;
+  if (J_eq_task.cols() >= static_cast<int>(task_dims.size())) {
+    double determinant = J_Jt.determinant();
+    // J_Jt is theoretically PSD; clear only small negative round-off.
+    if (determinant < 0.0 && std::abs(determinant) < 1.0e-12) {
+      determinant = 0.0;
+    }
+    measure = (determinant > 0.0) ? std::sqrt(determinant) : 0.0;
+  }
+
+  // Manipulability ellipsoid axes.
+  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigensolver(J_Jt);
+  Eigen::VectorXd eigenvalues;
+  Eigen::MatrixXd eigenvectors;
+  if (eigensolver.info() == Eigen::Success) {
+    eigenvalues = eigensolver.eigenvalues().cwiseMax(0.0).cwiseSqrt();
+    eigenvectors = eigensolver.eigenvectors();
+  } else {
+    eigenvalues = Eigen::VectorXd::Zero(task_dims.size());
+    eigenvectors = Eigen::MatrixXd::Identity(task_dims.size(), task_dims.size());
+  }
+
+  return {measure, eigenvalues, eigenvectors};
 }
 
-double Kinematics::computeBaseManipulability(
+double Kinematics::computeBaseManipulabilityMeasure(
   const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
   const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
 {
-  double measure = computeBaseManipulabilityCore(q, contact_frame_names, joint_names, task_dims);
-  return (measure < 0.0) ? 0.0 : measure;
-}
-
-double Kinematics::computeBaseManipulability(
-  const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
-  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
-  Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out)
-{
-  int t = static_cast<int>(task_dims.size());
-  double measure = computeBaseManipulabilityCore(q, contact_frame_names, joint_names, task_dims);
-
-  if (measure < 0.0) {  // no contact frames
-    eigenvalues_out = Eigen::VectorXd::Zero(t);
-    eigenvectors_out = Eigen::MatrixXd::Identity(t, t);
-    return 0.0;
-  }
-
-  auto JJt = manip_jjt_.topLeftCorner(t, t);
-  manip_eig_.compute(JJt);
-  if (manip_eig_.info() == Eigen::Success) {
-    eigenvalues_out = manip_eig_.eigenvalues().cwiseAbs().cwiseSqrt();
-    eigenvectors_out = manip_eig_.eigenvectors();
-  } else {
-    eigenvalues_out = Eigen::VectorXd::Zero(t);
-    eigenvectors_out = Eigen::MatrixXd::Identity(t, t);
-  }
-  return measure;
+  return std::get<0>(computeBaseManipulability(q, contact_frame_names, joint_names, task_dims));
 }
 
 Eigen::Isometry3d Kinematics::solveFK(

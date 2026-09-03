@@ -77,14 +77,16 @@ public:
     const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
     Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out);
 
-  double computeBaseManipulability(
+  // Rigorous base manipulability enforcing closed-chain consistency across contacts.
+  // Returns {measure, ellipsoid semi-axis lengths, ellipsoid axes}.
+  std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> computeBaseManipulability(
     const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
     const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
 
-  double computeBaseManipulability(
+  // Scalar convenience wrapper returning only the measure.
+  double computeBaseManipulabilityMeasure(
     const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
-    Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out);
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
 
   Eigen::Isometry3d solveFK(
     const Eigen::VectorXd & q, const std::string & target_frame,
@@ -128,10 +130,6 @@ private:
     const Eigen::VectorXd & q, const std::string & frame_name,
     const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
 
-  double computeBaseManipulabilityCore(
-    const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
-
   const pinocchio::Model & model_;
   pinocchio::Data data_;
   const RobotCore & core_;
@@ -145,14 +143,6 @@ private:
   Eigen::MatrixXd manip_j_task_;           // 6 x nv
   Eigen::Matrix<double, 6, 6> manip_jjt_;  // J J^T
   Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> manip_eig_;
-
-  Eigen::MatrixXd bmanip_jb_;              // 6k x 6
-  Eigen::MatrixXd bmanip_jq_;              // 6k x sub_nv
-  Eigen::Matrix<double, 6, 6> bmanip_vd_;  // V * Sigma^-1
-  Eigen::MatrixXd bmanip_pinv_;            // 6 x 6k
-  Eigen::MatrixXd bmanip_jeq_;             // 6 x sub_nv
-  Eigen::MatrixXd bmanip_jeq_task_;        // 6 x nv
-  Eigen::JacobiSVD<Eigen::MatrixXd> bmanip_svd_;
 };
 
 }  // namespace fbml
