@@ -100,14 +100,23 @@ int Kinematics::assembleSubJacobian(const std::vector<std::string> & joint_names
 
 double Kinematics::computeManipulabilityCore(
   const Eigen::VectorXd & q, const std::string & frame_name,
-  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
+  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+  double characteristic_length)
 {
+  if (characteristic_length <= 0.0) {
+    throw std::invalid_argument("Characteristic length must be positive.");
+  }
+
   computeFrameJacobianInto(q, frame_name, pinocchio::LOCAL);
   int sub_nv = assembleSubJacobian(joint_names);
   int t = static_cast<int>(task_dims.size());
 
   for (int i = 0; i < t; ++i) {
     manip_j_task_.row(i).head(sub_nv) = j_sub_.row(task_dims[i]).head(sub_nv);
+    // Spatial velocity ordering is [linear, angular]; scale only translational rows by 1/l_c.
+    if (task_dims[i] >= 0 && task_dims[i] < 3) {
+      manip_j_task_.row(i).head(sub_nv) /= characteristic_length;
+    }
   }
 
   const auto Jt = manip_j_task_.topLeftCorner(t, sub_nv);
@@ -118,17 +127,20 @@ double Kinematics::computeManipulabilityCore(
 
 double Kinematics::computeManipulability(
   const Eigen::VectorXd & q, const std::string & frame_name,
-  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
+  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+  double characteristic_length)
 {
-  return computeManipulabilityCore(q, frame_name, joint_names, task_dims);
+  return computeManipulabilityCore(q, frame_name, joint_names, task_dims, characteristic_length);
 }
 
 double Kinematics::computeManipulability(
   const Eigen::VectorXd & q, const std::string & frame_name,
   const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
-  Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out)
+  Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out,
+  double characteristic_length)
 {
-  double measure = computeManipulabilityCore(q, frame_name, joint_names, task_dims);
+  double measure =
+    computeManipulabilityCore(q, frame_name, joint_names, task_dims, characteristic_length);
   int t = static_cast<int>(task_dims.size());
 
   auto JJt = manip_jjt_.topLeftCorner(t, t);
@@ -145,8 +157,13 @@ double Kinematics::computeManipulability(
 
 std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseManipulability(
   const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
-  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
+  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+  double characteristic_length)
 {
+  if (characteristic_length <= 0.0) {
+    throw std::invalid_argument("Characteristic length must be positive.");
+  }
+
   const int k = static_cast<int>(contact_frame_names.size());
 
   if (k == 0) {
@@ -272,6 +289,10 @@ std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseMani
       throw std::out_of_range("Invalid task dimension.");
     }
     J_eq_task.row(i) = J_eq.row(task_dims[i]);
+    // Spatial velocity ordering is [linear, angular]; scale only translational rows by 1/l_c.
+    if (task_dims[i] < 3) {
+      J_eq_task.row(i) /= characteristic_length;
+    }
   }
 
   // 6. Manipulability: w = sqrt(det(J_eq J_eq^T))
@@ -305,9 +326,11 @@ std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseMani
 
 double Kinematics::computeBaseManipulabilityMeasure(
   const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
-  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims)
+  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+  double characteristic_length)
 {
-  return std::get<0>(computeBaseManipulability(q, contact_frame_names, joint_names, task_dims));
+  return std::get<0>(computeBaseManipulability(
+    q, contact_frame_names, joint_names, task_dims, characteristic_length));
 }
 
 Eigen::Isometry3d Kinematics::solveFK(

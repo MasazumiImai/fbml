@@ -61,32 +61,41 @@ public:
   /**
    * @brief Compute the manipulability measure for a given joint configuration and task dimensions.
    *
-   * @return The manipulability measure.
-   */
-  double computeManipulability(
-    const Eigen::VectorXd & q, const std::string & frame_name,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
-
-  /**
-   * @brief Compute the manipulability measure + ellipsoid for a given joint configuration and task dimensions.
-   *
+   * @param characteristic_length Length scale (> 0) dividing the translational task rows so that
+   *   translational and rotational directions are compared on the same footing. Must be positive.
    * @return The manipulability measure.
    */
   double computeManipulability(
     const Eigen::VectorXd & q, const std::string & frame_name,
     const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
-    Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out);
+    double characteristic_length = 1.0);
+
+  /**
+   * @brief Compute the manipulability measure + ellipsoid for a given joint configuration and task dimensions.
+   *
+   * @param characteristic_length Length scale (> 0) dividing the translational task rows so that
+   *   translational and rotational directions are compared on the same footing. Must be positive.
+   * @return The manipulability measure.
+   */
+  double computeManipulability(
+    const Eigen::VectorXd & q, const std::string & frame_name,
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+    Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out,
+    double characteristic_length = 1.0);
 
   // Rigorous base manipulability enforcing closed-chain consistency across contacts.
   // Returns {measure, ellipsoid semi-axis lengths, ellipsoid axes}.
+  // characteristic_length (> 0) non-dimensionalizes the translational rows of the equivalent Jacobian.
   std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> computeBaseManipulability(
     const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+    double characteristic_length = 1.0);
 
   // Scalar convenience wrapper returning only the measure.
   double computeBaseManipulabilityMeasure(
     const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+    double characteristic_length = 1.0);
 
   Eigen::Isometry3d solveFK(
     const Eigen::VectorXd & q, const std::string & target_frame,
@@ -128,7 +137,8 @@ private:
 
   double computeManipulabilityCore(
     const Eigen::VectorXd & q, const std::string & frame_name,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+    double characteristic_length);
 
   const pinocchio::Model & model_;
   pinocchio::Data data_;
