@@ -17,6 +17,7 @@
 
 #include <Eigen/Dense>
 #include <string>
+#include <vector>
 
 #include <pinocchio/multibody/data.hpp>
 
@@ -43,10 +44,22 @@ public:
     const Eigen::VectorXd & q, const std::string & frame_name,
     pinocchio::ReferenceFrame reference_frame = pinocchio::LOCAL);
 
+  // Generalized Jacobians of several frames from one CRBA, stacked in frame order into
+  // jacobians_out (6 * frame_names.size() x nv - 6, joint columns in model velocity order).
+  void computeGeneralizedJacobians(
+    const Eigen::VectorXd & q, const std::vector<std::string> & frame_names,
+    Eigen::Ref<Eigen::MatrixXd> jacobians_out,
+    pinocchio::ReferenceFrame reference_frame = pinocchio::LOCAL);
+
 private:
   const pinocchio::Model & model_;
   pinocchio::Data data_;
   const RobotCore & core_;
+
+  // --- Preallocated workspaces ---
+  pinocchio::Data::Matrix6x frame_jacobian_;  // 6 x nv
+  Eigen::MatrixXd base_coupling_;             // M_b^{-1} M_bm, 6 x (nv - 6)
+  Eigen::LLT<Eigen::Matrix<double, 6, 6>, Eigen::Upper> base_inertia_llt_;  // CRBA fills Upper
 };
 
 }  // namespace fbml

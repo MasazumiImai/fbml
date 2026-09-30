@@ -25,7 +25,11 @@ namespace fbml
 {
 
 Dynamics::Dynamics(const RobotCore & core)
-: model_(core.getModel()), data_(pinocchio::Data(model_)), core_(core)
+: model_(core.getModel()),
+  data_(pinocchio::Data(model_)),
+  core_(core),
+  frame_jacobian_(pinocchio::Data::Matrix6x::Zero(6, model_.nv)),
+  base_coupling_(Eigen::MatrixXd::Zero(6, model_.nv - 6))
 {
 }
 
@@ -66,32 +70,39 @@ Eigen::MatrixXd Dynamics::computeGeneralizedJacobian(
   const Eigen::VectorXd & q, const std::string & frame_name,
   pinocchio::ReferenceFrame reference_frame)
 {
-  const pinocchio::FrameIndex frame_id = core_.frameId(frame_name);
+  Eigen::MatrixXd jacobian(6, model_.nv - 6);
+  computeGeneralizedJacobians(q, {frame_name}, jacobian, reference_frame);
+  return jacobian;
+}
+
+void Dynamics::computeGeneralizedJacobians(
+  const Eigen::VectorXd & q, const std::vector<std::string> & frame_names,
+  Eigen::Ref<Eigen::MatrixXd> jacobians_out, pinocchio::ReferenceFrame reference_frame)
+{
+  const int njoints = model_.nv - 6;
+  if (
+    jacobians_out.rows() != static_cast<Eigen::Index>(6 * frame_names.size()) ||
+    jacobians_out.cols() != njoints) {
+    throw std::invalid_argument("jacobians_out must be (6 * frames) x (nv - 6).");
+  }
 
   pinocchio::computeJointJacobians(model_, data_, q);
   pinocchio::updateFramePlacements(model_, data_);
-
-  // Inertial matrix M (Composite Rigid Body Algorithm)
   pinocchio::crba(model_, data_, q);
-  data_.M.triangularView<Eigen::StrictlyLower>() =
-    data_.M.transpose().triangularView<Eigen::StrictlyLower>();
 
-  pinocchio::Data::Matrix6x J_full(6, model_.nv);
-  J_full.setZero();
-  pinocchio::getFrameJacobian(model_, data_, frame_id, reference_frame, J_full);
+  // J* = J_m - J_b * M_b^{-1} * M_bm; the base coupling term is shared by every frame.
+  base_inertia_llt_.compute(data_.M.topLeftCorner<6, 6>());
+  base_coupling_ = data_.M.topRightCorner(6, njoints);
+  base_inertia_llt_.solveInPlace(base_coupling_);
 
-  const int njoints = model_.nv - 6;
-
-  Eigen::Matrix<double, 6, 6> M_b = data_.M.block<6, 6>(0, 0);
-  Eigen::MatrixXd M_bm = data_.M.block(0, 6, 6, njoints);
-
-  Eigen::Matrix<double, 6, 6> J_b = J_full.block<6, 6>(0, 0);
-  Eigen::MatrixXd J_m = J_full.block(0, 6, 6, njoints);
-
-  // J* = J_m - J_b * M_b^{-1} * M_bm
-  Eigen::MatrixXd J_g = J_m - J_b * M_b.llt().solve(M_bm);
-
-  return J_g;
+  for (std::size_t index = 0; index < frame_names.size(); ++index) {
+    frame_jacobian_.setZero();
+    pinocchio::getFrameJacobian(
+      model_, data_, core_.frameId(frame_names[index]), reference_frame, frame_jacobian_);
+    auto jacobian = jacobians_out.middleRows(static_cast<Eigen::Index>(6 * index), 6);
+    jacobian = frame_jacobian_.rightCols(njoints);
+    jacobian.noalias() -= frame_jacobian_.leftCols<6>() * base_coupling_;
+  }
 }
 
 }  // namespace fbml
