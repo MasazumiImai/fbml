@@ -58,33 +58,33 @@ public:
     const Eigen::VectorXd & q, const std::string & frame_name,
     pinocchio::ReferenceFrame reference_frame = pinocchio::LOCAL);
 
-  /**
-   * @brief Compute the manipulability measure for a given joint configuration and task dimensions.
-   *
-   * @return The manipulability measure.
-   */
-  double computeManipulability(
-    const Eigen::VectorXd & q, const std::string & frame_name,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
-
-  /**
-   * @brief Compute the manipulability measure + ellipsoid for a given joint configuration and task dimensions.
-   *
-   * @return The manipulability measure.
-   */
-  double computeManipulability(
+  // Manipulability of frame_name driven by joint_names.
+  // Returns {measure, ellipsoid semi-axis lengths, ellipsoid axes}.
+  // characteristic_length (> 0) non-dimensionalizes the translational rows of the Jacobian.
+  std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> computeManipulability(
     const Eigen::VectorXd & q, const std::string & frame_name,
     const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
-    Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out);
+    double characteristic_length = 1.0);
 
-  double computeBaseManipulability(
-    const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
+  // Scalar convenience wrapper returning only the measure (skips the eigendecomposition).
+  double computeManipulabilityMeasure(
+    const Eigen::VectorXd & q, const std::string & frame_name,
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+    double characteristic_length = 1.0);
 
-  double computeBaseManipulability(
+  // Rigorous base manipulability enforcing closed-chain consistency across contacts.
+  // Returns {measure, ellipsoid semi-axis lengths, ellipsoid axes}.
+  // characteristic_length (> 0) non-dimensionalizes the translational rows of the equivalent Jacobian.
+  std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> computeBaseManipulability(
     const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
     const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
-    Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out);
+    double characteristic_length = 1.0);
+
+  // Scalar convenience wrapper returning only the measure.
+  double computeBaseManipulabilityMeasure(
+    const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
+    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
+    double characteristic_length = 1.0);
 
   Eigen::Isometry3d solveFK(
     const Eigen::VectorXd & q, const std::string & target_frame,
@@ -124,14 +124,6 @@ private:
 
   int assembleSubJacobian(const std::vector<std::string> & joint_names);
 
-  double computeManipulabilityCore(
-    const Eigen::VectorXd & q, const std::string & frame_name,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
-
-  double computeBaseManipulabilityCore(
-    const Eigen::VectorXd & q, const std::vector<std::string> & contact_frame_names,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims);
-
   const pinocchio::Model & model_;
   pinocchio::Data data_;
   const RobotCore & core_;
@@ -145,14 +137,6 @@ private:
   Eigen::MatrixXd manip_j_task_;           // 6 x nv
   Eigen::Matrix<double, 6, 6> manip_jjt_;  // J J^T
   Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> manip_eig_;
-
-  Eigen::MatrixXd bmanip_jb_;              // 6k x 6
-  Eigen::MatrixXd bmanip_jq_;              // 6k x sub_nv
-  Eigen::Matrix<double, 6, 6> bmanip_vd_;  // V * Sigma^-1
-  Eigen::MatrixXd bmanip_pinv_;            // 6 x 6k
-  Eigen::MatrixXd bmanip_jeq_;             // 6 x sub_nv
-  Eigen::MatrixXd bmanip_jeq_task_;        // 6 x nv
-  Eigen::JacobiSVD<Eigen::MatrixXd> bmanip_svd_;
 };
 
 }  // namespace fbml

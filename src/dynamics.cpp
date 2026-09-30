@@ -53,7 +53,12 @@ Eigen::VectorXd Dynamics::computeNonLinearEffects(
   const Eigen::VectorXd & q, const Eigen::VectorXd & v)
 {
   // Non-linear term (coriolis + gravity) (RNEA: Recursive Newton-Euler Algorithm)
-  return pinocchio::nonLinearEffects(model_, data_, q, v);
+  Eigen::VectorXd nle = pinocchio::nonLinearEffects(model_, data_, q, v);
+
+  // Viscous joint damping (tau = damping .* v); RNEA does not include it.
+  nle += model_.damping.cwiseProduct(v);
+
+  return nle;
 }
 
 Eigen::MatrixXd Dynamics::computeGeneralizedJacobian(
