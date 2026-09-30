@@ -36,6 +36,10 @@ Kinematics::Kinematics(const RobotCore & core)
   j_ac_.setZero();
   j_sub_ = Eigen::MatrixXd::Zero(6, nv);
   manip_j_task_ = Eigen::MatrixXd::Zero(6, nv);
+  ik_joint_ids_.reserve(static_cast<std::size_t>(model_.njoints));
+  ik_dq_ = Eigen::VectorXd::Zero(nv);
+  ik_v_ = Eigen::VectorXd::Zero(nv);
+  ik_q_next_ = Eigen::VectorXd::Zero(model_.nq);
 }
 
 ComState Kinematics::computeComState(
@@ -49,14 +53,10 @@ Eigen::MatrixXd Kinematics::computeJacobian(
   const Eigen::VectorXd & q, const std::string & frame_name,
   pinocchio::ReferenceFrame reference_frame)
 {
-  if (!model_.existFrame(frame_name)) {
-    throw std::invalid_argument("Frame '" + frame_name + "' does not exist in the model.");
-  }
+  const pinocchio::FrameIndex frame_id = core_.frameId(frame_name);
 
   pinocchio::computeJointJacobians(model_, data_, q);
   pinocchio::updateFramePlacements(model_, data_);
-
-  pinocchio::FrameIndex frame_id = model_.getFrameId(frame_name);
 
   pinocchio::Data::Matrix6x J(6, model_.nv);
   J.setZero();
@@ -70,14 +70,11 @@ void Kinematics::computeFrameJacobianInto(
   const Eigen::VectorXd & q, const std::string & frame_name,
   pinocchio::ReferenceFrame reference_frame)
 {
-  if (!model_.existFrame(frame_name)) {
-    throw std::invalid_argument("Frame '" + frame_name + "' does not exist in the model.");
-  }
+  const pinocchio::FrameIndex frame_id = core_.frameId(frame_name);
 
   pinocchio::computeJointJacobians(model_, data_, q);
   pinocchio::updateFramePlacements(model_, data_);
 
-  pinocchio::FrameIndex frame_id = model_.getFrameId(frame_name);
   j_ac_.setZero();
   pinocchio::getFrameJacobian(model_, data_, frame_id, reference_frame, j_ac_);
 }
@@ -86,12 +83,12 @@ int Kinematics::assembleSubJacobian(const std::vector<std::string> & joint_names
 {
   int sub_nv = 0;
   for (const auto & name : joint_names) {
-    if (!model_.existJointName(name)) {
-      throw std::invalid_argument("Joint '" + name + "' does not exist.");
-    }
-    pinocchio::JointIndex j_id = model_.getJointId(name);
+    pinocchio::JointIndex j_id = core_.jointId(name);
     int nv_i = model_.joints[j_id].nv();
     int idx_v = model_.joints[j_id].idx_v();
+    if (sub_nv + nv_i > model_.nv) {
+      throw std::invalid_argument("Joint names exceed the model velocity dimension.");
+    }
     j_sub_.middleCols(sub_nv, nv_i) = j_ac_.middleCols(idx_v, nv_i);
     sub_nv += nv_i;
   }
@@ -161,10 +158,7 @@ std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseMani
   // 1. Stacked base and supporting-joint Jacobians: J_b v_b + J_q qdot = 0
   int sub_nv = 0;
   for (const auto & name : joint_names) {
-    if (!model_.existJointName(name)) {
-      throw std::invalid_argument("Joint '" + name + "' does not exist.");
-    }
-    sub_nv += model_.joints[model_.getJointId(name)].nv();
+    sub_nv += model_.joints[core_.jointId(name)].nv();
   }
 
   Eigen::MatrixXd J_b = Eigen::MatrixXd::Zero(6 * k, 6);
@@ -174,11 +168,7 @@ std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseMani
   pinocchio::updateFramePlacements(model_, data_);
 
   for (int i = 0; i < k; ++i) {
-    if (!model_.existFrame(contact_frame_names[i])) {
-      throw std::invalid_argument("Frame '" + contact_frame_names[i] + "' does not exist.");
-    }
-
-    const pinocchio::FrameIndex frame_id = model_.getFrameId(contact_frame_names[i]);
+    const pinocchio::FrameIndex frame_id = core_.frameId(contact_frame_names[i]);
 
     pinocchio::Data::Matrix6x J_full(6, model_.nv);
     J_full.setZero();
@@ -190,7 +180,7 @@ std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseMani
     // Supporting-joint contribution
     int col_offset = 0;
     for (const auto & name : joint_names) {
-      const pinocchio::JointIndex j_id = model_.getJointId(name);
+      const pinocchio::JointIndex j_id = core_.jointId(name);
       const int nv_i = model_.joints[j_id].nv();
       const int idx_v = model_.joints[j_id].idx_v();
 
@@ -322,24 +312,17 @@ double Kinematics::computeBaseManipulabilityMeasure(
 Eigen::Isometry3d Kinematics::solveFK(
   const Eigen::VectorXd & q, const std::string & target_frame, const std::string & reference_frame)
 {
-  if (!model_.existFrame(target_frame)) {
-    throw std::invalid_argument("Frame '" + target_frame + "' does not exist in the model.");
-  }
+  const pinocchio::FrameIndex target_id = core_.frameId(target_frame);
 
   pinocchio::forwardKinematics(model_, data_, q);
   pinocchio::updateFramePlacements(model_, data_);
 
-  pinocchio::FrameIndex target_id = model_.getFrameId(target_frame);
   pinocchio::SE3 pose_se3;
 
   if (reference_frame == "world") {
     pose_se3 = data_.oMf[target_id];
   } else {
-    if (!model_.existFrame(reference_frame)) {
-      throw std::invalid_argument("Frame '" + reference_frame + "' does not exist in the model.");
-    }
-    pinocchio::FrameIndex ref_id = model_.getFrameId(reference_frame);
-    pose_se3 = data_.oMf[ref_id].actInv(data_.oMf[target_id]);
+    pose_se3 = data_.oMf[core_.frameId(reference_frame)].actInv(data_.oMf[target_id]);
   }
 
   Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
@@ -356,86 +339,67 @@ bool Kinematics::solveNumericalIK(
 {
   pinocchio::SE3 des_pose_se3(desired_pose.rotation(), desired_pose.translation());
 
-  if (!model_.existFrame(frame_name)) {
-    throw std::invalid_argument("Frame '" + frame_name + "' does not exist.");
-  }
-  pinocchio::FrameIndex frame_id = model_.getFrameId(frame_name);
+  const pinocchio::FrameIndex frame_id = core_.frameId(frame_name);
+  const bool use_ref = (reference_frame != "world");
+  const pinocchio::FrameIndex ref_id = use_ref ? core_.frameId(reference_frame) : 0;
 
-  pinocchio::FrameIndex ref_id = 0;
-  bool use_ref = (reference_frame != "world");
-  if (use_ref) {
-    if (!model_.existFrame(reference_frame)) {
-      throw std::invalid_argument("Frame '" + reference_frame + "' does not exist.");
-    }
-    ref_id = model_.getFrameId(reference_frame);
-  }
-
-  std::vector<pinocchio::JointIndex> joint_ids;
+  // Preallocated workspaces keep this loop heap-free for real-time callers.
+  ik_joint_ids_.clear();
   int sub_nv = 0;
   for (const auto & name : joint_names) {
-    if (!model_.existJointName(name)) {
-      throw std::invalid_argument("Joint '" + name + "' does not exist.");
-    }
-    pinocchio::JointIndex j_id = model_.getJointId(name);
-    joint_ids.push_back(j_id);
+    const pinocchio::JointIndex j_id = core_.jointId(name);
+    ik_joint_ids_.push_back(j_id);
     sub_nv += model_.joints[j_id].nv();
   }
+  if (sub_nv > model_.nv) {
+    throw std::invalid_argument("Joint names exceed the model velocity dimension.");
+  }
 
-  pinocchio::Data::Matrix6x J_sub(6, sub_nv);
-  pinocchio::Data::Matrix6x J_full(6, model_.nv);
+  auto J_sub = j_sub_.leftCols(sub_nv);
+  auto dq_sub = ik_dq_.head(sub_nv);
 
   for (int iter = 0; iter < settings.max_iterations; ++iter) {
     pinocchio::computeJointJacobians(model_, data_, q);
     pinocchio::updateFramePlacements(model_, data_);
 
-    pinocchio::SE3 des_pose_in_world = des_pose_se3;
-    if (use_ref) {
-      // _oM_ref * _refM_des = _oM_des
-      des_pose_in_world = data_.oMf[ref_id] * des_pose_se3;
-    }
-
-    pinocchio::SE3 T_cur = data_.oMf[frame_id];
-    pinocchio::SE3 T_err = T_cur.inverse() * des_pose_in_world;
-    Eigen::VectorXd error = pinocchio::log6(T_err).toVector();
-
-    error = settings.task_weights.cwiseProduct(error);
+    // _oM_ref * _refM_des = _oM_des
+    const pinocchio::SE3 des_pose_in_world =
+      use_ref ? data_.oMf[ref_id] * des_pose_se3 : des_pose_se3;
+    const Eigen::Vector<double, 6> error = settings.task_weights.cwiseProduct(
+      pinocchio::log6(data_.oMf[frame_id].actInv(des_pose_in_world)).toVector());
 
     if (error.norm() < settings.tolerance) {
       return core_.isWithinJointLimits(q, joint_names);
     }
 
-    J_full.setZero();
-    pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL, J_full);
+    j_ac_.setZero();
+    pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL, j_ac_);
 
     int col_offset = 0;
-    for (const auto & j_id : joint_ids) {
+    for (const auto & j_id : ik_joint_ids_) {
       int nv_i = model_.joints[j_id].nv();
       int idx_v = model_.joints[j_id].idx_v();
-      J_sub.middleCols(col_offset, nv_i) = J_full.middleCols(idx_v, nv_i);
+      J_sub.middleCols(col_offset, nv_i) =
+        settings.task_weights.asDiagonal() * j_ac_.middleCols(idx_v, nv_i);
       col_offset += nv_i;
     }
 
-    J_sub = settings.task_weights.asDiagonal() * J_sub;
+    // Damped Least Squares: dq = J^T (J J^T + lambda I)^-1 e
+    dls_A_.noalias() = J_sub * J_sub.transpose();
+    dls_A_.diagonal().array() += settings.damping_factor;
+    dq_sub.noalias() = J_sub.transpose() * dls_A_.ldlt().solve(error);
 
-    // Damped Least Squares (DLS)
-
-    // A = J * J^T + lambda * I
-    Eigen::MatrixXd A = J_sub * J_sub.transpose();
-    A.diagonal().array() += settings.damping_factor;
-
-    // dq_sub = J^T * A^-1 * error
-    Eigen::VectorXd dq_sub = J_sub.transpose() * A.ldlt().solve(error);
-
-    Eigen::VectorXd v_full = Eigen::VectorXd::Zero(model_.nv);
+    ik_v_.setZero();
     col_offset = 0;
-    for (const auto & j_id : joint_ids) {
+    for (const auto & j_id : ik_joint_ids_) {
       int nv_i = model_.joints[j_id].nv();
       int idx_v = model_.joints[j_id].idx_v();
-      v_full.segment(idx_v, nv_i) = dq_sub.segment(col_offset, nv_i);
+      ik_v_.segment(idx_v, nv_i) = dq_sub.segment(col_offset, nv_i);
       col_offset += nv_i;
     }
 
-    q = pinocchio::integrate(model_, q, v_full);
+    pinocchio::integrate(model_, q, ik_v_, ik_q_next_);
+    q = ik_q_next_;
   }
 
   return false;

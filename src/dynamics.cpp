@@ -24,7 +24,8 @@
 namespace fbml
 {
 
-Dynamics::Dynamics(const RobotCore & core) : model_(core.getModel()), data_(pinocchio::Data(model_))
+Dynamics::Dynamics(const RobotCore & core)
+: model_(core.getModel()), data_(pinocchio::Data(model_)), core_(core)
 {
 }
 
@@ -65,10 +66,7 @@ Eigen::MatrixXd Dynamics::computeGeneralizedJacobian(
   const Eigen::VectorXd & q, const std::string & frame_name,
   pinocchio::ReferenceFrame reference_frame)
 {
-  if (!model_.existFrame(frame_name)) {
-    throw std::invalid_argument("Frame '" + frame_name + "' does not exist.");
-  }
-  pinocchio::FrameIndex frame_id = model_.getFrameId(frame_name);
+  const pinocchio::FrameIndex frame_id = core_.frameId(frame_name);
 
   pinocchio::computeJointJacobians(model_, data_, q);
   pinocchio::updateFramePlacements(model_, data_);

@@ -31,6 +31,14 @@ RobotCore::RobotCore(const std::string & urdf_path, const Eigen::Vector3d & grav
 
     model_.gravity.linear() = gravity;
 
+    // First occurrence wins, matching Pinocchio's getFrameId for duplicated frame names.
+    for (std::size_t id = 0; id < model_.frames.size(); ++id) {
+      frame_ids_.emplace(model_.frames[id].name, id);
+    }
+    for (std::size_t id = 0; id < model_.names.size(); ++id) {
+      joint_ids_.emplace(model_.names[id], id);
+    }
+
     std::cout << "[fbml] Successfully loaded URDF. " << model_.njoints - 2
               << "-DoF (nv: " << model_.nv << ", nq: " << model_.nq << ")" << std::endl;
   } catch (const std::exception & e) {
@@ -45,6 +53,24 @@ double RobotCore::getTotalMass() const
   return pinocchio::computeTotalMass(model_);
 }
 
+pinocchio::FrameIndex RobotCore::frameId(const std::string & name) const
+{
+  const auto it = frame_ids_.find(name);
+  if (it == frame_ids_.end()) {
+    throw std::invalid_argument("Frame '" + name + "' does not exist in the model.");
+  }
+  return it->second;
+}
+
+pinocchio::JointIndex RobotCore::jointId(const std::string & name) const
+{
+  const auto it = joint_ids_.find(name);
+  if (it == joint_ids_.end()) {
+    throw std::invalid_argument("Joint '" + name + "' does not exist in the model.");
+  }
+  return it->second;
+}
+
 Eigen::VectorXd RobotCore::neutralConfiguration() const
 {
   return pinocchio::neutral(model_);
@@ -55,10 +81,11 @@ Eigen::VectorXd RobotCore::configurationFromJointMap(
 {
   Eigen::VectorXd q = pinocchio::neutral(model_);
   for (const auto & [name, value] : joints) {
-    if (!model_.existJointName(name)) {
+    const auto joint = joint_ids_.find(name);
+    if (joint == joint_ids_.end()) {
       continue;
     }
-    const auto joint_id = model_.getJointId(name);
+    const auto joint_id = joint->second;
     if (model_.nqs[joint_id] == 1) {
       q[model_.idx_qs[joint_id]] = value;
     }
@@ -94,15 +121,8 @@ void RobotCore::setActuatorParameters(
 std::vector<std::string> RobotCore::getJointNamesBetweenFrames(
   const std::string & start_frame_name, const std::string & end_frame_name) const
 {
-  if (!model_.existFrame(start_frame_name)) {
-    throw std::invalid_argument("Frame '" + start_frame_name + "' does not exist.");
-  }
-  if (!model_.existFrame(end_frame_name)) {
-    throw std::invalid_argument("Frame '" + end_frame_name + "' does not exist.");
-  }
-
-  pinocchio::FrameIndex start_frame_id = model_.getFrameId(start_frame_name);
-  pinocchio::FrameIndex end_frame_id = model_.getFrameId(end_frame_name);
+  pinocchio::FrameIndex start_frame_id = frameId(start_frame_name);
+  pinocchio::FrameIndex end_frame_id = frameId(end_frame_name);
 
   pinocchio::JointIndex start_joint = model_.frames[start_frame_id].parentJoint;
   pinocchio::JointIndex end_joint = model_.frames[end_frame_id].parentJoint;
@@ -151,13 +171,14 @@ bool RobotCore::isWithinJointLimits(
   const Eigen::VectorXd & q, const std::vector<std::string> & joint_names) const
 {
   for (const auto & j_name : joint_names) {
-    if (!model_.existJointName(j_name)) continue;
+    const auto joint = joint_ids_.find(j_name);
+    if (joint == joint_ids_.end()) continue;
 
-    auto j_id = model_.getJointId(j_name);
-    int idx_q = model_.joints[j_id].idx_q();
-    int nv = model_.joints[j_id].nv();
+    const auto & model_joint = model_.joints[joint->second];
+    const int idx_q = model_joint.idx_q();
 
-    if (nv == 1) {  // Revolute joint
+    // nq == 1: revolute/prismatic; continuous joints (nq 2, nv 1) have no position limit.
+    if (model_joint.nq() == 1) {
       double current_angle = q[idx_q];
 
       if (
