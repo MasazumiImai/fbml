@@ -18,6 +18,7 @@
 #include <Eigen/Dense>
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <pinocchio/multibody/model.hpp>
@@ -36,6 +37,11 @@ public:
   virtual ~RobotCore() = default;
 
   const pinocchio::Model & getModel() const { return model_; }
+
+  // Allocation-free, thread-safe name lookups (Pinocchio's getFrameId/getJointId allocate).
+  // Throw std::invalid_argument for unknown names.
+  pinocchio::FrameIndex frameId(const std::string & name) const;
+  pinocchio::JointIndex jointId(const std::string & name) const;
 
   double getTotalMass() const;
 
@@ -57,6 +63,9 @@ public:
 
 private:
   pinocchio::Model model_;
+
+  std::unordered_map<std::string, pinocchio::FrameIndex> frame_ids_;
+  std::unordered_map<std::string, pinocchio::JointIndex> joint_ids_;
 };
 
 }  // namespace fbml

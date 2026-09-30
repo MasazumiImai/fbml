@@ -132,7 +132,12 @@ private:
 
   pinocchio::Data::Matrix6x j_ac_;     // 6 x nv frame Jacobian
   Eigen::MatrixXd j_sub_;              // 6 x nv sub-Jacobian
-  Eigen::Matrix<double, 6, 6> dls_A_;  // solveIVK DLS system matrix
+  Eigen::Matrix<double, 6, 6> dls_A_;  // solveIVK / solveNumericalIK DLS system matrix
+
+  std::vector<pinocchio::JointIndex> ik_joint_ids_;  // capacity njoints
+  Eigen::VectorXd ik_dq_;                            // nv
+  Eigen::VectorXd ik_v_;                             // nv
+  Eigen::VectorXd ik_q_next_;                        // nq
 
   Eigen::MatrixXd manip_j_task_;           // 6 x nv
   Eigen::Matrix<double, 6, 6> manip_jjt_;  // J J^T
