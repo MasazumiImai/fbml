@@ -122,7 +122,15 @@ private:
     const Eigen::VectorXd & q, const std::string & frame_name,
     pinocchio::ReferenceFrame reference_frame);
 
-  int assembleSubJacobian(const std::vector<std::string> & joint_names);
+  // Gather joint_ids_' columns of j_ac_ into the leading columns of j_sub_.
+  void assembleSubJacobian();
+
+  // Resolve joint_names into joint_ids_ and return their total nv. Throws on unknown or
+  // duplicated names. Allocation-free after construction.
+  int resolveJoints(const std::vector<std::string> & joint_names);
+
+  // Throws unless task_dims is a non-empty set of distinct indices in [0, 6).
+  static void validateTaskDims(const std::vector<int> & task_dims);
 
   const pinocchio::Model & model_;
   pinocchio::Data data_;
@@ -134,10 +142,10 @@ private:
   Eigen::MatrixXd j_sub_;              // 6 x nv sub-Jacobian
   Eigen::Matrix<double, 6, 6> dls_A_;  // solveIVK / solveNumericalIK DLS system matrix
 
-  std::vector<pinocchio::JointIndex> ik_joint_ids_;  // capacity njoints
-  Eigen::VectorXd ik_dq_;                            // nv
-  Eigen::VectorXd ik_v_;                             // nv
-  Eigen::VectorXd ik_q_next_;                        // nq
+  std::vector<pinocchio::JointIndex> joint_ids_;  // capacity njoints
+  Eigen::VectorXd ik_dq_;                         // nv
+  Eigen::VectorXd ik_v_;                          // nv
+  Eigen::VectorXd ik_q_next_;                     // nq
 
   Eigen::MatrixXd manip_j_task_;           // 6 x nv
   Eigen::Matrix<double, 6, 6> manip_jjt_;  // J J^T
