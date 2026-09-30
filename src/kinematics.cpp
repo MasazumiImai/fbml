@@ -386,9 +386,9 @@ bool Kinematics::solveNumericalIK(
     assembleSubJacobian();
     J_sub.array().colwise() *= settings.task_weights.array();
 
-    // Damped Least Squares: dq = J^T (J J^T + lambda I)^-1 e
+    // Damped Least Squares: dq = J^T (J J^T + lambda^2 I)^-1 e
     dls_A_.noalias() = J_sub * J_sub.transpose();
-    dls_A_.diagonal().array() += settings.damping_factor;
+    dls_A_.diagonal().array() += settings.damping_factor * settings.damping_factor;
     dq_sub.noalias() = J_sub.transpose() * dls_A_.ldlt().solve(error);
 
     ik_v_.setZero();

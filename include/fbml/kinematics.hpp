@@ -39,7 +39,8 @@ struct IKSettings
 {
   double tolerance = 1e-4;
   int max_iterations = 100;
-  double damping_factor = 1e-2;
+  // DLS damping lambda, applied as J J^T + lambda^2 I.
+  double damping_factor = 1e-1;
 
   // Weights for errors on each axis [vx, vy, vz, wx, wy, wz]
   Eigen::Vector<double, 6> task_weights = Eigen::Vector<double, 6>::Ones();
