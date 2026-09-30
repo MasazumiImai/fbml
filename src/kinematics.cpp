@@ -36,7 +36,7 @@ Kinematics::Kinematics(const RobotCore & core)
   j_ac_.setZero();
   j_sub_ = Eigen::MatrixXd::Zero(6, nv);
   manip_j_task_ = Eigen::MatrixXd::Zero(6, nv);
-  ik_joint_ids_.reserve(static_cast<std::size_t>(model_.njoints));
+  joint_ids_.reserve(static_cast<std::size_t>(model_.njoints));
   ik_dq_ = Eigen::VectorXd::Zero(nv);
   ik_v_ = Eigen::VectorXd::Zero(nv);
   ik_q_next_ = Eigen::VectorXd::Zero(model_.nq);
@@ -79,20 +79,43 @@ void Kinematics::computeFrameJacobianInto(
   pinocchio::getFrameJacobian(model_, data_, frame_id, reference_frame, j_ac_);
 }
 
-int Kinematics::assembleSubJacobian(const std::vector<std::string> & joint_names)
+int Kinematics::resolveJoints(const std::vector<std::string> & joint_names)
 {
+  joint_ids_.clear();
   int sub_nv = 0;
   for (const auto & name : joint_names) {
-    pinocchio::JointIndex j_id = core_.jointId(name);
-    int nv_i = model_.joints[j_id].nv();
-    int idx_v = model_.joints[j_id].idx_v();
-    if (sub_nv + nv_i > model_.nv) {
-      throw std::invalid_argument("Joint names exceed the model velocity dimension.");
+    const pinocchio::JointIndex j_id = core_.jointId(name);
+    if (std::find(joint_ids_.begin(), joint_ids_.end(), j_id) != joint_ids_.end()) {
+      throw std::invalid_argument("Joint '" + name + "' is listed more than once.");
     }
-    j_sub_.middleCols(sub_nv, nv_i) = j_ac_.middleCols(idx_v, nv_i);
-    sub_nv += nv_i;
+    joint_ids_.push_back(j_id);
+    sub_nv += model_.joints[j_id].nv();
   }
   return sub_nv;
+}
+
+void Kinematics::validateTaskDims(const std::vector<int> & task_dims)
+{
+  if (task_dims.empty() || task_dims.size() > 6) {
+    throw std::invalid_argument("task_dims must contain between 1 and 6 entries.");
+  }
+  for (std::size_t i = 0; i < task_dims.size(); ++i) {
+    if (
+      task_dims[i] < 0 || task_dims[i] >= 6 ||
+      std::find(task_dims.begin(), task_dims.begin() + i, task_dims[i]) != task_dims.begin() + i) {
+      throw std::invalid_argument("task_dims must be distinct indices in [0, 6).");
+    }
+  }
+}
+
+void Kinematics::assembleSubJacobian()
+{
+  int col_offset = 0;
+  for (const auto & j_id : joint_ids_) {
+    const int nv_i = model_.joints[j_id].nv();
+    j_sub_.middleCols(col_offset, nv_i) = j_ac_.middleCols(model_.joints[j_id].idx_v(), nv_i);
+    col_offset += nv_i;
+  }
 }
 
 double Kinematics::computeManipulabilityMeasure(
@@ -103,15 +126,17 @@ double Kinematics::computeManipulabilityMeasure(
   if (characteristic_length <= 0.0) {
     throw std::invalid_argument("Characteristic length must be positive.");
   }
+  validateTaskDims(task_dims);
+  const int sub_nv = resolveJoints(joint_names);
 
   computeFrameJacobianInto(q, frame_name, pinocchio::LOCAL);
-  int sub_nv = assembleSubJacobian(joint_names);
-  int t = static_cast<int>(task_dims.size());
+  assembleSubJacobian();
+  const int t = static_cast<int>(task_dims.size());
 
   for (int i = 0; i < t; ++i) {
     manip_j_task_.row(i).head(sub_nv) = j_sub_.row(task_dims[i]).head(sub_nv);
     // Spatial velocity ordering is [linear, angular]; scale only translational rows by 1/l_c.
-    if (task_dims[i] >= 0 && task_dims[i] < 3) {
+    if (task_dims[i] < 3) {
       manip_j_task_.row(i).head(sub_nv) /= characteristic_length;
     }
   }
@@ -146,6 +171,8 @@ std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseMani
   if (characteristic_length <= 0.0) {
     throw std::invalid_argument("Characteristic length must be positive.");
   }
+  validateTaskDims(task_dims);
+  const int sub_nv = resolveJoints(joint_names);
 
   const int k = static_cast<int>(contact_frame_names.size());
 
@@ -156,11 +183,6 @@ std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseMani
   }
 
   // 1. Stacked base and supporting-joint Jacobians: J_b v_b + J_q qdot = 0
-  int sub_nv = 0;
-  for (const auto & name : joint_names) {
-    sub_nv += model_.joints[core_.jointId(name)].nv();
-  }
-
   Eigen::MatrixXd J_b = Eigen::MatrixXd::Zero(6 * k, 6);
   Eigen::MatrixXd J_q = Eigen::MatrixXd::Zero(6 * k, sub_nv);
 
@@ -179,8 +201,7 @@ std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseMani
 
     // Supporting-joint contribution
     int col_offset = 0;
-    for (const auto & name : joint_names) {
-      const pinocchio::JointIndex j_id = core_.jointId(name);
+    for (const auto & j_id : joint_ids_) {
       const int nv_i = model_.joints[j_id].nv();
       const int idx_v = model_.joints[j_id].idx_v();
 
@@ -261,9 +282,6 @@ std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseMani
 
   Eigen::MatrixXd J_eq_task(task_dims.size(), J_eq.cols());
   for (size_t i = 0; i < task_dims.size(); ++i) {
-    if (task_dims[i] < 0 || task_dims[i] >= J_eq.rows()) {
-      throw std::out_of_range("Invalid task dimension.");
-    }
     J_eq_task.row(i) = J_eq.row(task_dims[i]);
     // Spatial velocity ordering is [linear, angular]; scale only translational rows by 1/l_c.
     if (task_dims[i] < 3) {
@@ -344,16 +362,7 @@ bool Kinematics::solveNumericalIK(
   const pinocchio::FrameIndex ref_id = use_ref ? core_.frameId(reference_frame) : 0;
 
   // Preallocated workspaces keep this loop heap-free for real-time callers.
-  ik_joint_ids_.clear();
-  int sub_nv = 0;
-  for (const auto & name : joint_names) {
-    const pinocchio::JointIndex j_id = core_.jointId(name);
-    ik_joint_ids_.push_back(j_id);
-    sub_nv += model_.joints[j_id].nv();
-  }
-  if (sub_nv > model_.nv) {
-    throw std::invalid_argument("Joint names exceed the model velocity dimension.");
-  }
+  const int sub_nv = resolveJoints(joint_names);
 
   auto J_sub = j_sub_.leftCols(sub_nv);
   auto dq_sub = ik_dq_.head(sub_nv);
@@ -374,24 +383,17 @@ bool Kinematics::solveNumericalIK(
 
     j_ac_.setZero();
     pinocchio::getFrameJacobian(model_, data_, frame_id, pinocchio::LOCAL, j_ac_);
+    assembleSubJacobian();
+    J_sub.array().colwise() *= settings.task_weights.array();
 
-    int col_offset = 0;
-    for (const auto & j_id : ik_joint_ids_) {
-      int nv_i = model_.joints[j_id].nv();
-      int idx_v = model_.joints[j_id].idx_v();
-      J_sub.middleCols(col_offset, nv_i) =
-        settings.task_weights.asDiagonal() * j_ac_.middleCols(idx_v, nv_i);
-      col_offset += nv_i;
-    }
-
-    // Damped Least Squares: dq = J^T (J J^T + lambda I)^-1 e
+    // Damped Least Squares: dq = J^T (J J^T + lambda^2 I)^-1 e
     dls_A_.noalias() = J_sub * J_sub.transpose();
-    dls_A_.diagonal().array() += settings.damping_factor;
+    dls_A_.diagonal().array() += settings.damping_factor * settings.damping_factor;
     dq_sub.noalias() = J_sub.transpose() * dls_A_.ldlt().solve(error);
 
     ik_v_.setZero();
-    col_offset = 0;
-    for (const auto & j_id : ik_joint_ids_) {
+    int col_offset = 0;
+    for (const auto & j_id : joint_ids_) {
       int nv_i = model_.joints[j_id].nv();
       int idx_v = model_.joints[j_id].idx_v();
       ik_v_.segment(idx_v, nv_i) = dq_sub.segment(col_offset, nv_i);
@@ -411,8 +413,12 @@ void Kinematics::solveIVK(
   const std::vector<std::string> & joint_names, Eigen::Ref<Eigen::VectorXd> joint_vel_out,
   double damping_factor)
 {
+  const int sub_nv = resolveJoints(joint_names);
+  if (joint_vel_out.size() < sub_nv) {
+    throw std::invalid_argument("joint_vel_out is smaller than the joints' velocity dimension.");
+  }
   computeFrameJacobianInto(q, frame_name, pinocchio::LOCAL);
-  int sub_nv = assembleSubJacobian(joint_names);
+  assembleSubJacobian();
 
   const auto J = j_sub_.leftCols(sub_nv);
   dls_A_.noalias() = J * J.transpose();
