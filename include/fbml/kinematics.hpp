@@ -58,29 +58,18 @@ public:
     const Eigen::VectorXd & q, const std::string & frame_name,
     pinocchio::ReferenceFrame reference_frame = pinocchio::LOCAL);
 
-  /**
-   * @brief Compute the manipulability measure for a given joint configuration and task dimensions.
-   *
-   * @param characteristic_length Length scale (> 0) dividing the translational task rows so that
-   *   translational and rotational directions are compared on the same footing. Must be positive.
-   * @return The manipulability measure.
-   */
-  double computeManipulability(
+  // Manipulability of frame_name driven by joint_names.
+  // Returns {measure, ellipsoid semi-axis lengths, ellipsoid axes}.
+  // characteristic_length (> 0) non-dimensionalizes the translational rows of the Jacobian.
+  std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> computeManipulability(
     const Eigen::VectorXd & q, const std::string & frame_name,
     const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
     double characteristic_length = 1.0);
 
-  /**
-   * @brief Compute the manipulability measure + ellipsoid for a given joint configuration and task dimensions.
-   *
-   * @param characteristic_length Length scale (> 0) dividing the translational task rows so that
-   *   translational and rotational directions are compared on the same footing. Must be positive.
-   * @return The manipulability measure.
-   */
-  double computeManipulability(
+  // Scalar convenience wrapper returning only the measure (skips the eigendecomposition).
+  double computeManipulabilityMeasure(
     const Eigen::VectorXd & q, const std::string & frame_name,
     const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
-    Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out,
     double characteristic_length = 1.0);
 
   // Rigorous base manipulability enforcing closed-chain consistency across contacts.
@@ -134,11 +123,6 @@ private:
     pinocchio::ReferenceFrame reference_frame);
 
   int assembleSubJacobian(const std::vector<std::string> & joint_names);
-
-  double computeManipulabilityCore(
-    const Eigen::VectorXd & q, const std::string & frame_name,
-    const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
-    double characteristic_length);
 
   const pinocchio::Model & model_;
   pinocchio::Data data_;

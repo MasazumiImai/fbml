@@ -98,7 +98,7 @@ int Kinematics::assembleSubJacobian(const std::vector<std::string> & joint_names
   return sub_nv;
 }
 
-double Kinematics::computeManipulabilityCore(
+double Kinematics::computeManipulabilityMeasure(
   const Eigen::VectorXd & q, const std::string & frame_name,
   const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
   double characteristic_length)
@@ -125,34 +125,20 @@ double Kinematics::computeManipulabilityCore(
   return std::sqrt(std::abs(JJt.determinant()));
 }
 
-double Kinematics::computeManipulability(
+std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeManipulability(
   const Eigen::VectorXd & q, const std::string & frame_name,
   const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
   double characteristic_length)
 {
-  return computeManipulabilityCore(q, frame_name, joint_names, task_dims, characteristic_length);
-}
+  const double measure =
+    computeManipulabilityMeasure(q, frame_name, joint_names, task_dims, characteristic_length);
+  const int t = static_cast<int>(task_dims.size());
 
-double Kinematics::computeManipulability(
-  const Eigen::VectorXd & q, const std::string & frame_name,
-  const std::vector<std::string> & joint_names, const std::vector<int> & task_dims,
-  Eigen::VectorXd & eigenvalues_out, Eigen::MatrixXd & eigenvectors_out,
-  double characteristic_length)
-{
-  double measure =
-    computeManipulabilityCore(q, frame_name, joint_names, task_dims, characteristic_length);
-  int t = static_cast<int>(task_dims.size());
-
-  auto JJt = manip_jjt_.topLeftCorner(t, t);
-  manip_eig_.compute(JJt);
-  if (manip_eig_.info() == Eigen::Success) {
-    eigenvalues_out = manip_eig_.eigenvalues().cwiseAbs().cwiseSqrt();
-    eigenvectors_out = manip_eig_.eigenvectors();
-  } else {
-    eigenvalues_out = Eigen::VectorXd::Zero(t);
-    eigenvectors_out = Eigen::MatrixXd::Identity(t, t);
+  manip_eig_.compute(manip_jjt_.topLeftCorner(t, t));
+  if (manip_eig_.info() != Eigen::Success) {
+    return {measure, Eigen::VectorXd::Zero(t), Eigen::MatrixXd::Identity(t, t)};
   }
-  return measure;
+  return {measure, manip_eig_.eigenvalues().cwiseMax(0.0).cwiseSqrt(), manip_eig_.eigenvectors()};
 }
 
 std::tuple<double, Eigen::VectorXd, Eigen::MatrixXd> Kinematics::computeBaseManipulability(
