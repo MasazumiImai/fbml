@@ -59,6 +59,11 @@ public:
     const Eigen::VectorXd & q, const std::string & frame_name,
     pinocchio::ReferenceFrame reference_frame = pinocchio::LOCAL);
 
+  // Stacks the 6 x nv Jacobians of frame_names into out (6k x nv) with a single kinematics pass.
+  void computeJacobians(
+    const Eigen::VectorXd & q, const std::vector<std::string> & frame_names,
+    Eigen::Ref<Eigen::MatrixXd> out, pinocchio::ReferenceFrame reference_frame = pinocchio::LOCAL);
+
   // Manipulability of frame_name driven by joint_names.
   // Returns {measure, ellipsoid semi-axis lengths, ellipsoid axes}.
   // characteristic_length (> 0) non-dimensionalizes the translational rows of the Jacobian.

@@ -66,6 +66,25 @@ Eigen::MatrixXd Kinematics::computeJacobian(
   return J;
 }
 
+void Kinematics::computeJacobians(
+  const Eigen::VectorXd & q, const std::vector<std::string> & frame_names,
+  Eigen::Ref<Eigen::MatrixXd> out, pinocchio::ReferenceFrame reference_frame)
+{
+  if (out.rows() != 6 * static_cast<Eigen::Index>(frame_names.size()) || out.cols() != model_.nv) {
+    throw std::invalid_argument("Kinematics::computeJacobians: out must be 6k x nv");
+  }
+
+  pinocchio::computeJointJacobians(model_, data_, q);
+  pinocchio::updateFramePlacements(model_, data_);
+
+  for (std::size_t i = 0; i < frame_names.size(); ++i) {
+    j_ac_.setZero();
+    pinocchio::getFrameJacobian(
+      model_, data_, core_.frameId(frame_names[i]), reference_frame, j_ac_);
+    out.middleRows(6 * static_cast<Eigen::Index>(i), 6) = j_ac_;
+  }
+}
+
 void Kinematics::computeFrameJacobianInto(
   const Eigen::VectorXd & q, const std::string & frame_name,
   pinocchio::ReferenceFrame reference_frame)
