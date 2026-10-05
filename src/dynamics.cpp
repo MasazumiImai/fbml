@@ -16,6 +16,7 @@
 
 #include <stdexcept>
 
+#include <pinocchio/algorithm/centroidal.hpp>
 #include <pinocchio/algorithm/crba.hpp>
 #include <pinocchio/algorithm/frames.hpp>
 #include <pinocchio/algorithm/jacobian.hpp>
@@ -64,6 +65,14 @@ Eigen::VectorXd Dynamics::computeNonLinearEffects(
   nle += model_.damping.cwiseProduct(v);
 
   return nle;
+}
+
+void Dynamics::computeCentroidalMomentum(
+  const Eigen::VectorXd & q, const Eigen::VectorXd & v, Eigen::Vector<double, 6> & momentum,
+  Eigen::Vector3d & com)
+{
+  momentum = pinocchio::computeCentroidalMomentum(model_, data_, q, v).toVector();
+  com = data_.com[0];
 }
 
 Eigen::MatrixXd Dynamics::computeGeneralizedJacobian(
