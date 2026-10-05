@@ -40,6 +40,11 @@ public:
 
   Eigen::VectorXd computeNonLinearEffects(const Eigen::VectorXd & q, const Eigen::VectorXd & v);
 
+  // Centroidal momentum [linear; angular] about the CoM in world axes, and the CoM in world.
+  void computeCentroidalMomentum(
+    const Eigen::VectorXd & q, const Eigen::VectorXd & v, Eigen::Vector<double, 6> & momentum,
+    Eigen::Vector3d & com);
+
   Eigen::MatrixXd computeGeneralizedJacobian(
     const Eigen::VectorXd & q, const std::string & frame_name,
     pinocchio::ReferenceFrame reference_frame = pinocchio::LOCAL);
