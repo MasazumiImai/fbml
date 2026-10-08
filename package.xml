@@ -12,6 +12,7 @@
 
   <depend>eigen</depend>
   <depend>pinocchio</depend>
+  <depend>urdfdom</depend>
 
   <!-- <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_copyright</test_depend>

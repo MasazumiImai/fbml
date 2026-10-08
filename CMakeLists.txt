@@ -14,6 +14,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(pinocchio REQUIRED)
+find_package(urdfdom REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/core.cpp
@@ -30,10 +31,11 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 target_link_libraries(${PROJECT_NAME} PUBLIC
   Eigen3::Eigen
   pinocchio::pinocchio
+  urdfdom::urdfdom_model
 )
 
 ament_export_targets(${PROJECT_NAME}Targets HAS_LIBRARY_TARGET)
-ament_export_dependencies(Eigen3 pinocchio)
+ament_export_dependencies(Eigen3 pinocchio urdfdom)
 
 install(DIRECTORY include/
   DESTINATION include
@@ -49,17 +51,11 @@ install(TARGETS ${PROJECT_NAME}
 
 add_compile_definitions(COAL_DISABLE_HPP_FCL_WARNINGS)
 
-# if(BUILD_TESTING)
-#   find_package(ament_lint_auto REQUIRED)
-#   set(ament_cmake_copyright_FOUND TRUE)
-#   set(ament_cmake_cpplint_FOUND TRUE)
-#   ament_lint_auto_find_test_dependencies()
-
-  # find_package(ament_cmake_gtest REQUIRED)
-  # ament_add_gtest(unit_test_${PROJECT_NAME} test/unit_test_${PROJECT_NAME}.cpp)
-  # if(TARGET unit_test_${PROJECT_NAME})
-  #   target_link_libraries(unit_test_${PROJECT_NAME} ${PROJECT_NAME})
-  # endif()
-# endif()
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(check_link_inertia test/check_link_inertia.cpp)
+  target_link_libraries(check_link_inertia fbml)
+  add_test(NAME check_link_inertia COMMAND check_link_inertia)
+endif()
 
 ament_package()

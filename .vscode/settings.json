@@ -32,6 +32,7 @@
     "RNEA",
     "schematypens",
     "URDF",
+    "urdfdom",
     "Wextra",
     "Wpedantic"
   ],
