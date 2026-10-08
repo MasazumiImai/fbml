@@ -32,7 +32,7 @@ RobotCore::RobotCore(const std::string & urdf_path, const Eigen::Vector3d & grav
     if (!urdf) throw std::invalid_argument("Cannot read URDF: " + urdf_path);
     pinocchio::urdf::buildModel(urdf, pinocchio::JointModelFreeFlyer(), model_);
 
-    setInertial(urdf, model_);
+    setInertia(urdf, model_);
 
     model_.gravity.linear() = gravity;
 
@@ -58,13 +58,15 @@ double RobotCore::getTotalMass() const
   return pinocchio::computeTotalMass(model_);
 }
 
-const pinocchio::Inertia & RobotCore::linkInertia(const std::string & name) const
+std::tuple<double, Eigen::Vector3d, Eigen::Matrix3d> RobotCore::linkInertia(
+  const std::string & name) const
 {
   const auto id = model_.getFrameId(name, pinocchio::BODY);
   if (id >= model_.frames.size()) {
     throw std::invalid_argument("Link '" + name + "' does not exist in the model.");
   }
-  return model_.frames[id].inertia;
+  const auto & inertia = model_.frames[id].inertia;
+  return {inertia.mass(), inertia.lever(), inertia.inertia().matrix()};
 }
 
 pinocchio::FrameIndex RobotCore::frameId(const std::string & name) const
@@ -205,7 +207,7 @@ bool RobotCore::isWithinJointLimits(
   return true;
 }
 
-void RobotCore::setInertial(const urdf::ModelInterfaceSharedPtr & urdf, pinocchio::Model & model)
+void RobotCore::setInertia(const urdf::ModelInterfaceSharedPtr & urdf, pinocchio::Model & model)
 {
   for (auto & frame : model.frames) {
     if (frame.type != pinocchio::BODY) {

@@ -20,6 +20,7 @@
 #include <Eigen/Dense>
 #include <map>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -47,9 +48,14 @@ public:
 
   double getTotalMass() const;
 
-  // Inertia of this link alone, expressed in its link axes, before fixed-joint aggregation.
-  // Links without <inertial> return zero inertia; unknown link names throw std::invalid_argument.
-  const pinocchio::Inertia & linkInertia(const std::string & name) const;
+  /**
+   * @brief Get the inertia of a link expressed in its link frame, before fixed-joint aggregation.
+   * @note Links without <inertial> return zero inertia; unknown link names throw std::invalid_argument.
+   *
+   * @param name The name of the link.
+   * @return std::tuple<double, Eigen::Vector3d, Eigen::Matrix3d> {mass, CoM in link, inertia at CoM in link frame}.
+   */
+  std::tuple<double, Eigen::Vector3d, Eigen::Matrix3d> linkInertia(const std::string & name) const;
 
   Eigen::VectorXd neutralConfiguration() const;
 
@@ -68,7 +74,7 @@ public:
     const Eigen::VectorXd & q, const std::vector<std::string> & joint_names) const;
 
 private:
-  void setInertial(const urdf::ModelInterfaceSharedPtr & urdf, pinocchio::Model & model_);
+  void setInertia(const urdf::ModelInterfaceSharedPtr & urdf, pinocchio::Model & model_);
 
   pinocchio::Model model_;
 
