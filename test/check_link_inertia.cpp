@@ -64,13 +64,16 @@ int main()
     require(
       core.getModel().inertias[i].isApprox(expected.inertias[i], 1e-12), "Joint inertia changed");
   }
-  const auto & tool = core.linkInertia("tool");
-  require(tool.mass() == 3.0, "Returned combined or joint-frame inertia");
-  require(tool.lever().isApprox(Eigen::Vector3d(0.1, -0.2, 0.3), 1e-12), "CoM is not in link axes");
+  const auto [mass, com, inertia] = core.linkInertia("tool");
+  require(mass == 3.0, "Returned combined or joint-frame inertia");
+  require(com.isApprox(Eigen::Vector3d(0.1, -0.2, 0.3), 1e-12), "CoM is not in link axes");
   Eigen::Matrix3d tensor;
   tensor << 2, -0.2, -0.3, -0.2, 1, 0.1, -0.3, 0.1, 3;
-  require(tool.inertia().matrix().isApprox(tensor, 1e-12), "Inertial-origin rotation was lost");
-  require(core.linkInertia("marker").isZero(), "Missing inertial must produce zero inertia");
+  require(inertia.isApprox(tensor, 1e-12), "Inertial-origin rotation was lost");
+  const auto [marker_mass, marker_com, marker_inertia] = core.linkInertia("marker");
+  require(
+    marker_mass == 0.0 && marker_com.isZero() && marker_inertia.isZero(),
+    "Missing inertial must produce zero inertia");
   bool rejected = false;
   try {
     core.linkInertia("marker_joint");  // Existing joint frame, but not a link.
