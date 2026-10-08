@@ -15,6 +15,8 @@
 #ifndef FBML__CORE_HPP_
 #define FBML__CORE_HPP_
 
+#include <urdf_parser/urdf_parser.h>
+
 #include <Eigen/Dense>
 #include <map>
 #include <string>
@@ -45,6 +47,10 @@ public:
 
   double getTotalMass() const;
 
+  // Inertia of this link alone, expressed in its link axes, before fixed-joint aggregation.
+  // Links without <inertial> return zero inertia; unknown link names throw std::invalid_argument.
+  const pinocchio::Inertia & linkInertia(const std::string & name) const;
+
   Eigen::VectorXd neutralConfiguration() const;
 
   // Neutral configuration with the named single-DOF joints overwritten.
@@ -62,6 +68,8 @@ public:
     const Eigen::VectorXd & q, const std::vector<std::string> & joint_names) const;
 
 private:
+  void setInertial(const urdf::ModelInterfaceSharedPtr & urdf, pinocchio::Model & model_);
+
   pinocchio::Model model_;
 
   std::unordered_map<std::string, pinocchio::FrameIndex> frame_ids_;

@@ -14,6 +14,7 @@
 
 #include "fbml/core.hpp"
 
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 
@@ -27,7 +28,11 @@ namespace fbml
 RobotCore::RobotCore(const std::string & urdf_path, const Eigen::Vector3d & gravity)
 {
   try {
-    pinocchio::urdf::buildModel(urdf_path, pinocchio::JointModelFreeFlyer(), model_);
+    const auto urdf = urdf::parseURDFFile(urdf_path);
+    if (!urdf) throw std::invalid_argument("Cannot read URDF: " + urdf_path);
+    pinocchio::urdf::buildModel(urdf, pinocchio::JointModelFreeFlyer(), model_);
+
+    setInertial(urdf, model_);
 
     model_.gravity.linear() = gravity;
 
@@ -51,6 +56,15 @@ RobotCore::RobotCore(const std::string & urdf_path, const Eigen::Vector3d & grav
 double RobotCore::getTotalMass() const
 {
   return pinocchio::computeTotalMass(model_);
+}
+
+const pinocchio::Inertia & RobotCore::linkInertia(const std::string & name) const
+{
+  const auto id = model_.getFrameId(name, pinocchio::BODY);
+  if (id >= model_.frames.size()) {
+    throw std::invalid_argument("Link '" + name + "' does not exist in the model.");
+  }
+  return model_.frames[id].inertia;
 }
 
 pinocchio::FrameIndex RobotCore::frameId(const std::string & name) const
@@ -189,6 +203,35 @@ bool RobotCore::isWithinJointLimits(
     }
   }
   return true;
+}
+
+void RobotCore::setInertial(const urdf::ModelInterfaceSharedPtr & urdf, pinocchio::Model & model)
+{
+  for (auto & frame : model.frames) {
+    if (frame.type != pinocchio::BODY) {
+      continue;
+    }
+    const auto link = urdf->getLink(frame.name);
+    if (!link || !link->inertial) {
+      continue;
+    }
+    const auto & inertial = *link->inertial;
+    const auto & p = inertial.origin.position;
+    const auto & q = inertial.origin.rotation;
+    const Eigen::Vector3d com(p.x, p.y, p.z);
+    const Eigen::Matrix3d rotation = Eigen::Quaterniond(q.w, q.x, q.y, q.z).toRotationMatrix();
+    Eigen::Matrix3d tensor;
+    tensor << inertial.ixx, inertial.ixy, inertial.ixz, inertial.ixy, inertial.iyy, inertial.iyz,
+      inertial.ixz, inertial.iyz, inertial.izz;
+    tensor = (rotation * tensor * rotation.transpose()).eval();
+    if (
+      !std::isfinite(inertial.mass) || inertial.mass < 0.0 || !com.allFinite() ||
+      !tensor.allFinite()) {
+      throw std::invalid_argument("[fbml] Invalid link inertia: " + frame.name);
+    }
+    // Joint inertias already contain this link; store metadata without aggregating it again.
+    frame.inertia = pinocchio::Inertia(inertial.mass, com, tensor);
+  }
 }
 
 }  // namespace fbml
