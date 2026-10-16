@@ -90,6 +90,23 @@ struct ContactWrenchDecomposition
   Eigen::Matrix<double, 6, Eigen::Dynamic> internal;
 };
 
+// Reuses working storage for a fixed contact count. Returned data lives until the next compute.
+class FBML_PUBLIC ContactWrenchDecomposer
+{
+public:
+  explicit ContactWrenchDecomposer(Eigen::Index contact_count);
+  const ContactWrenchDecomposition & compute(
+    const std::vector<Eigen::Isometry3d> & contact_poses,
+    const Eigen::Ref<const Eigen::Matrix<double, 6, Eigen::Dynamic>> & contact_wrenches,
+    double characteristic_length);
+
+private:
+  ContactWrenchDecomposition result_;
+  Eigen::Matrix<double, 6, Eigen::Dynamic> grasp_, normalized_;
+  Eigen::JacobiSVD<Eigen::Matrix<double, 6, Eigen::Dynamic>> svd_;
+  Eigen::VectorXd net_scaled_;
+};
+
 /**
  * @brief Split contact wrenches into minimum-norm support and zero-resultant components.
  * @note Allocates working matrices; not suitable for a hard real-time loop.

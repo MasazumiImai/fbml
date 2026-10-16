@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 #include "fbml/math_utils.hpp"
@@ -22,20 +23,33 @@ namespace fbml
 namespace math
 {
 
-ContactWrenchDecomposition decomposeContactWrenches(
+ContactWrenchDecomposer::ContactWrenchDecomposer(Eigen::Index contact_count)
+{
+  if (contact_count <= 0 || contact_count > std::numeric_limits<Eigen::Index>::max() / 6) {
+    throw std::invalid_argument("Contact count must be positive and representable");
+  }
+  grasp_.resize(6, 6 * contact_count);
+  normalized_.resize(6, contact_count);
+  net_scaled_.resize(6 * contact_count);
+  result_.net.resize(6, contact_count);
+  result_.internal.resize(6, contact_count);
+  svd_ = decltype(svd_)(6, 6 * contact_count, Eigen::ComputeThinU | Eigen::ComputeThinV);
+}
+
+const ContactWrenchDecomposition & ContactWrenchDecomposer::compute(
   const std::vector<Eigen::Isometry3d> & contact_poses,
   const Eigen::Ref<const Eigen::Matrix<double, 6, Eigen::Dynamic>> & contact_wrenches,
   double characteristic_length)
 {
   const Eigen::Index count = contact_wrenches.cols();
   if (
-    count == 0 || contact_poses.size() != static_cast<std::size_t>(count) ||
+    count != normalized_.cols() || contact_poses.size() != static_cast<std::size_t>(count) ||
     !std::isfinite(characteristic_length) || characteristic_length <= 0.0 ||
     !contact_wrenches.allFinite()) {
     throw std::invalid_argument("Invalid contact wrenches or characteristic length");
   }
 
-  ContactWrenchDecomposition result;
+  auto & result = result_;
   result.reference_point.setZero();
   for (const auto & pose : contact_poses) {
     if (
@@ -48,10 +62,8 @@ ContactWrenchDecomposition decomposeContactWrenches(
     result.reference_point += pose.translation() / static_cast<double>(count);
   }
 
-  // NOTE: per-call allocation keeps the calculation independent of contact count. Add a
-  // preallocated workspace before integrating this function into a hard real-time controller.
-  Eigen::Matrix<double, 6, Eigen::Dynamic> grasp(6, 6 * count);
-  Eigen::Matrix<double, 6, Eigen::Dynamic> normalized(6, count);
+  auto & grasp = grasp_;
+  auto & normalized = normalized_;
   for (Eigen::Index i = 0; i < count; ++i) {
     const auto & pose = contact_poses[i];
     const Eigen::Vector3d r = (pose.translation() - result.reference_point) / characteristic_length;
@@ -74,13 +86,15 @@ ContactWrenchDecomposition decomposeContactWrenches(
   if (!resultant_scaled.allFinite()) {
     throw std::runtime_error("Contact wrench resultant overflowed");
   }
-  const Eigen::JacobiSVD<Eigen::Matrix<double, 6, Eigen::Dynamic>> svd(
-    grasp, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  svd_.compute(grasp, Eigen::ComputeThinU | Eigen::ComputeThinV);
   // Full six-axis contact wrenches make G full row rank even for coincident origins.
-  if (svd.rank() != 6) {
+  if (svd_.rank() != 6) {
     throw std::runtime_error("Scaled contact grasp matrix is numerically rank deficient");
   }
-  const Eigen::VectorXd net_scaled = svd.solve(resultant_scaled);
+  Eigen::Vector<double, 6> coefficients = svd_.matrixU().transpose() * resultant_scaled;
+  coefficients.array() /= svd_.singularValues().array();
+  net_scaled_.noalias() = svd_.matrixV() * coefficients;
+  const auto & net_scaled = net_scaled_;
   if (
     !net_scaled.allFinite() ||
     (grasp * net_scaled - resultant_scaled).stableNorm() >
@@ -102,6 +116,15 @@ ContactWrenchDecomposition decomposeContactWrenches(
     throw std::runtime_error("Contact wrench denormalization overflowed");
   }
   return result;
+}
+
+ContactWrenchDecomposition decomposeContactWrenches(
+  const std::vector<Eigen::Isometry3d> & contact_poses,
+  const Eigen::Ref<const Eigen::Matrix<double, 6, Eigen::Dynamic>> & contact_wrenches,
+  double characteristic_length)
+{
+  ContactWrenchDecomposer decomposer(contact_wrenches.cols());
+  return decomposer.compute(contact_poses, contact_wrenches, characteristic_length);
 }
 
 }  // namespace math

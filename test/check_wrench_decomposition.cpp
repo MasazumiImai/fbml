@@ -44,6 +44,12 @@ Eigen::Vector<double, 6> resultant(
 void checkDecomposition(const Poses & poses, const Wrenches & wrenches, double length)
 {
   const auto split = decomposeContactWrenches(poses, wrenches, length);
+  fbml::math::ContactWrenchDecomposer reusable(wrenches.cols());
+  reusable.compute(poses, 2 * wrenches, length);
+  const auto & reused = reusable.compute(poses, wrenches, length);
+  require((reused.net - split.net).norm() < 1e-10, "Reused workspace retained the old result");
+  require(
+    (reused.internal - split.internal).norm() < 1e-10, "Reused workspace changed internal load");
   require((split.net + split.internal).isApprox(wrenches, 1e-12), "Reconstruction failed");
   const auto expected = resultant(poses, wrenches, split.reference_point);
   require(split.resultant.isApprox(expected, 1e-12), "Reported resultant changed");
