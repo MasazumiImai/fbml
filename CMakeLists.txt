@@ -21,6 +21,7 @@ add_library(${PROJECT_NAME} SHARED
   src/kinematics.cpp
   src/dynamics.cpp
   src/math_utils.cpp
+  src/wrench_decomposition.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -56,6 +57,10 @@ if(BUILD_TESTING)
   add_executable(check_link_inertia test/check_link_inertia.cpp)
   target_link_libraries(check_link_inertia fbml)
   add_test(NAME check_link_inertia COMMAND check_link_inertia)
+
+  add_executable(check_wrench_decomposition test/check_wrench_decomposition.cpp)
+  target_link_libraries(check_wrench_decomposition fbml)
+  add_test(NAME check_wrench_decomposition COMMAND check_wrench_decomposition)
 endif()
 
 ament_package()

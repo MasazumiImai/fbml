@@ -16,6 +16,7 @@
 #define FBML__MATH_UTILS_HPP_
 
 #include <Eigen/Dense>
+#include <vector>
 
 #include "fbml/visibility_control.h"
 
@@ -79,6 +80,33 @@ Eigen::Vector<double, 6> transformTwist(
 FBML_PUBLIC
 Eigen::Vector<double, 6> transformWrench(
   const Eigen::Vector<double, 6> & wrench_in_local, const Eigen::Isometry3d & pose_local_in_ref);
+
+struct ContactWrenchDecomposition
+{
+  Eigen::Vector3d reference_point;     // Contact-origin centroid in the reference frame.
+  Eigen::Vector<double, 6> resultant;  // In reference axes, about reference_point.
+  // One column per contact, in its own frame and about its own origin, in physical units.
+  Eigen::Matrix<double, 6, Eigen::Dynamic> net;
+  Eigen::Matrix<double, 6, Eigen::Dynamic> internal;
+};
+
+/**
+ * @brief Split contact wrenches into minimum-norm support and zero-resultant components.
+ * @note Allocates working matrices; not suitable for a hard real-time loop.
+ *
+ * @param contact_poses Contact frames expressed in one common reference frame.
+ * @param contact_wrenches One [force; moment] column per contact, in that contact's frame.
+ * @param characteristic_length Positive finite length used to normalize moments to forces.
+ * @return net minimizes sum(|force|^2 + |moment/length|^2) while preserving the resultant;
+ *         internal = contact_wrenches - net. Neither component enforces contact/actuator limits.
+ *         The resultant is about the contact-origin centroid. Every contact is modeled as
+ *         transmitting a full six-axis wrench, regardless of the limb's actuation.
+ */
+FBML_PUBLIC
+ContactWrenchDecomposition decomposeContactWrenches(
+  const std::vector<Eigen::Isometry3d> & contact_poses,
+  const Eigen::Ref<const Eigen::Matrix<double, 6, Eigen::Dynamic>> & contact_wrenches,
+  double characteristic_length);
 
 }  // namespace math
 }  // namespace fbml
