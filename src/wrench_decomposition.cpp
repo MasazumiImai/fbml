@@ -28,12 +28,22 @@ ContactWrenchDecomposer::ContactWrenchDecomposer(Eigen::Index contact_count)
   if (contact_count <= 0 || contact_count > std::numeric_limits<Eigen::Index>::max() / 6) {
     throw std::invalid_argument("Contact count must be positive and representable");
   }
+  const Eigen::Index size = 6 * contact_count;
+  if (
+    size >
+    std::numeric_limits<Eigen::Index>::max() / static_cast<Eigen::Index>(sizeof(double)) / size) {
+    throw std::invalid_argument("Contact workspace size is not representable");
+  }
   grasp_.resize(6, 6 * contact_count);
   normalized_.resize(6, contact_count);
   net_scaled_.resize(6 * contact_count);
   result_.net.resize(6, contact_count);
   result_.internal.resize(6, contact_count);
-  svd_ = decltype(svd_)(6, 6 * contact_count, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  // NOTE: square zero-padding avoids Eigen's allocating rectangular QR, at O(n^2)
+  // storage and O(n^3) worst-case work; use allocation-free thin QR for large contact sets.
+  square_grasp_ = Eigen::MatrixXd::Zero(size, size);
+  svd_ = decltype(svd_)(size, size, Eigen::ComputeFullU | Eigen::ComputeFullV);
+  svd_.setThreshold(6.0 * std::numeric_limits<double>::epsilon());
 }
 
 const ContactWrenchDecomposition & ContactWrenchDecomposer::compute(
@@ -86,14 +96,16 @@ const ContactWrenchDecomposition & ContactWrenchDecomposer::compute(
   if (!resultant_scaled.allFinite()) {
     throw std::runtime_error("Contact wrench resultant overflowed");
   }
-  svd_.compute(grasp, Eigen::ComputeThinU | Eigen::ComputeThinV);
+  square_grasp_.topRows<6>() = grasp;
+  svd_.compute(square_grasp_, Eigen::ComputeFullU | Eigen::ComputeFullV);
   // Full six-axis contact wrenches make G full row rank even for coincident origins.
   if (svd_.rank() != 6) {
     throw std::runtime_error("Scaled contact grasp matrix is numerically rank deficient");
   }
-  Eigen::Vector<double, 6> coefficients = svd_.matrixU().transpose() * resultant_scaled;
-  coefficients.array() /= svd_.singularValues().array();
-  net_scaled_.noalias() = svd_.matrixV() * coefficients;
+  Eigen::Vector<double, 6> coefficients =
+    svd_.matrixU().topLeftCorner<6, 6>().transpose() * resultant_scaled;
+  coefficients.array() /= svd_.singularValues().head<6>().array();
+  net_scaled_.noalias() = svd_.matrixV().leftCols<6>() * coefficients;
   const auto & net_scaled = net_scaled_;
   if (
     !net_scaled.allFinite() ||

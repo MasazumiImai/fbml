@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -21,6 +22,16 @@
 using Wrenches = Eigen::Matrix<double, 6, Eigen::Dynamic>;
 using Poses = std::vector<Eigen::Isometry3d>;
 using fbml::math::decomposeContactWrenches;
+
+// Eigen allocates through malloc on the supported glibc/Linux platform.
+bool count_allocations = false;
+int allocations = 0;
+extern "C" void * __libc_malloc(std::size_t size);
+extern "C" void * malloc(std::size_t size)
+{
+  if (count_allocations) ++allocations;
+  return __libc_malloc(size);
+}
 
 void require(bool condition, const char * message)
 {
@@ -45,8 +56,13 @@ void checkDecomposition(const Poses & poses, const Wrenches & wrenches, double l
 {
   const auto split = decomposeContactWrenches(poses, wrenches, length);
   fbml::math::ContactWrenchDecomposer reusable(wrenches.cols());
-  reusable.compute(poses, 2 * wrenches, length);
+  const Wrenches doubled = 2 * wrenches;
+  allocations = 0;
+  count_allocations = true;
+  reusable.compute(poses, doubled, length);
   const auto & reused = reusable.compute(poses, wrenches, length);
+  count_allocations = false;
+  require(allocations == 0, "Reusable wrench decomposition allocated in compute");
   require((reused.net - split.net).norm() < 1e-10, "Reused workspace retained the old result");
   require(
     (reused.internal - split.internal).norm() < 1e-10, "Reused workspace changed internal load");
@@ -107,7 +123,7 @@ void checkDecomposition(const Poses & poses, const Wrenches & wrenches, double l
 int main()
 {
   constexpr double length = 0.41662;
-  for (const int count : {1, 3, 4}) {
+  for (const int count : {1, 2, 3, 4}) {
     Poses poses(count, Eigen::Isometry3d::Identity());
     Wrenches wrenches(6, count);
     for (int i = 0; i < count; ++i) {
@@ -184,7 +200,7 @@ int main()
     overflow_rejected = true;
   }
   require(overflow_rejected, "Normalization overflow produced an unchecked result");
-  std::cout
-    << "Wrench decomposition: 1/3/4 contacts, reconstruction, zero resultant, minimum norm, "
-       "frame/unit invariance, invalid inputs and overflow rejection passed\n";
+  std::cout << "Wrench decomposition: 1/2/3/4 contacts, no compute allocations, reconstruction, "
+               "zero resultant, minimum norm, "
+               "frame/unit invariance, invalid inputs and overflow rejection passed\n";
 }

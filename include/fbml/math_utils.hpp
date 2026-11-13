@@ -83,7 +83,7 @@ Eigen::Vector<double, 6> transformWrench(
 
 struct ContactWrenchDecomposition
 {
-  Eigen::Vector3d reference_point;     // Contact-origin centroid in the reference frame.
+  Eigen::Vector3d reference_point;  // Contact-origin centroid in the reference frame.
   Eigen::Vector<double, 6> resultant;  // In reference axes, about reference_point.
   // One column per contact, in its own frame and about its own origin, in physical units.
   Eigen::Matrix<double, 6, Eigen::Dynamic> net;
@@ -103,7 +103,8 @@ public:
 private:
   ContactWrenchDecomposition result_;
   Eigen::Matrix<double, 6, Eigen::Dynamic> grasp_, normalized_;
-  Eigen::JacobiSVD<Eigen::Matrix<double, 6, Eigen::Dynamic>> svd_;
+  Eigen::MatrixXd square_grasp_;
+  Eigen::JacobiSVD<Eigen::MatrixXd, Eigen::NoQRPreconditioner> svd_;
   Eigen::VectorXd net_scaled_;
 };
 
